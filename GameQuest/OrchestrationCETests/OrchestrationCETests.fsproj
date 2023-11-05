@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<Compile Include="TestEvents.fs" />
+    <Compile Include="CancellableOrchestrationsTest.fs" />
+    <Compile Include="ConcatMapTests.fs" />
+    <Compile Include="ExhaustMapTests.fs" />
+    <Compile Include="MergeMapTests.fs" />
+    <Compile Include="OperationsTests.fs" />
+    <Compile Include="OrchestrationCETests.fs" />
+    <Compile Include="SwitchMapTests.fs" />
+    <Compile Include="YieldTests.fs" />
+	<Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Expecto" Version="9.0.4" />
+    <PackageReference Include="FSharp.SystemTextJson" Version="0.19.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrchestrationCE\OrchestrationCE.fsproj" />
+  </ItemGroup>
+
+</Project>
