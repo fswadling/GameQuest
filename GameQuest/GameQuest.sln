@@ -9,6 +9,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "OrchestrationCE", "Orchestr
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "OrchestrationCETests", "OrchestrationCETests\OrchestrationCETests.fsproj", "{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "GameQuestStateMachines", "GameQuestStateMachines\GameQuestStateMachines.fsproj", "{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

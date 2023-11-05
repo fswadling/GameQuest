@@ -1,9 +1,9 @@
-﻿using FontStashSharp;
+﻿using Microsoft.FSharp.Core;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Myra;
-using Myra.Graphics2D.UI;
+using static Utilities;
 
 namespace GameQuest
 {
@@ -11,8 +11,8 @@ namespace GameQuest
     {
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
-        private Desktop _desktop;
-        private bool isOnStartMenu = true;
+        private StaticCoordinationRunner staticCoordinationRunner;
+        private FSharpOption<IMenu> menu;
 
         public Game1()
         {
@@ -26,52 +26,14 @@ namespace GameQuest
             base.Initialize();
         }
 
-        private Widget GetStartMenu()
+        private void OnMenuJourneyEvent(Utilities.MenuJourneyEvent e)
         {
-            var panel = new Panel();
+            this.menu = this.staticCoordinationRunner.DoStep(e);
 
-            var stack = new VerticalStackPanel();
-
-            var positionedText = new Label();
-            positionedText.HorizontalAlignment = HorizontalAlignment.Center;
-            positionedText.Text = "Echoes of Elaria: The Crystals of Destiny";
-
-            var pressEnterText = new Label();
-            pressEnterText.HorizontalAlignment = HorizontalAlignment.Center;
-            pressEnterText.Text = "Press Enter";
-
-            stack.Widgets.Add(positionedText);
-            stack.Widgets.Add(pressEnterText);
-
-            panel.VerticalAlignment = VerticalAlignment.Center;
-            panel.HorizontalAlignment = HorizontalAlignment.Center;
-
-            panel.Widgets.Add(stack);
-
-            return panel;
-        }
-
-        private Widget GetStartLoadMenu()
-        {
-            var panel = new Panel();
-
-            var stack = new VerticalStackPanel();
-
-            var startNewGame = new Button { Content = new Label { Text = "Start new game" } };
-            startNewGame.HorizontalAlignment = HorizontalAlignment.Center;
-
-            var loadGame = new Button { Content = new Label { Text = "Load game" } };
-            loadGame.HorizontalAlignment = HorizontalAlignment.Center;
-
-            stack.Widgets.Add(startNewGame);
-            stack.Widgets.Add(loadGame);
-
-            panel.VerticalAlignment = VerticalAlignment.Center;
-            panel.HorizontalAlignment = HorizontalAlignment.Center;
-
-            panel.Widgets.Add(stack);
-
-            return panel;
+            if (this.menu != null)
+            {
+                this.menu.Value.Initialise();
+            }
         }
 
         protected override void LoadContent()
@@ -80,11 +42,14 @@ namespace GameQuest
 
             MyraEnvironment.Game = this;
 
-            var startMenu = GetStartMenu();
+            this.staticCoordinationRunner = new StaticCoordinationRunner(MenuJourney.StartMenuJouney(this.OnMenuJourneyEvent));
 
-            // Add it to the desktop
-            _desktop = new Desktop();
-            _desktop.Root = startMenu;
+            this.menu = this.staticCoordinationRunner.DoStep(MenuJourneyEvent.Initialise);
+
+            if (this.menu != null)
+            {
+                this.menu.Value.Initialise();
+            }
         }
 
         protected override void Update(GameTime gameTime)
@@ -92,10 +57,9 @@ namespace GameQuest
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 Exit();
 
-            if (isOnStartMenu && Keyboard.GetState().IsKeyDown(Keys.Enter))
+            if (this.menu != null)
             {
-                this.isOnStartMenu = false;
-                _desktop.Root = GetStartLoadMenu();
+                this.menu.Value.OnUpdate(gameTime);
             }
 
             base.Update(gameTime);
@@ -103,9 +67,12 @@ namespace GameQuest
 
         protected override void Draw(GameTime gameTime)
         {
-
             GraphicsDevice.Clear(Color.Black);
-            _desktop.Render();
+
+            if (this.menu != null)
+            {
+                this.menu.Value.OnRender();
+            }
 
             base.Draw(gameTime);
         }

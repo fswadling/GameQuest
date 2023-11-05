@@ -23,6 +23,9 @@
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
     <PackageReference Include="Myra" Version="1.5.1" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameQuestStateMachines\GameQuestStateMachines.fsproj" />
+  </ItemGroup>
   <Target Name="RestoreDotnetTools" BeforeTargets="Restore">
     <Message Text="Restoring dotnet tools" Importance="High" />
     <Exec Command="dotnet tool restore" />
