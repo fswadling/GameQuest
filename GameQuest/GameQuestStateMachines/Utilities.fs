@@ -1,17 +1,18 @@
 ﻿module Utilities
-open OrchestrationCE.Coordination
 
+open System
+open OrchestrationCE.Coordination
 open Microsoft.Xna.Framework
 
 type ScreenJourneyEvent =
     | Initialise
     | TitleScreenDone
-    | StartLoadSelected of {| DoLoad: bool |}
-    | LoadFileResult of string option
+    | StartLoadSelected of string option
     | OpenGameScreen
     | OpenMenuScreen
 
 type IScreen =
+    inherit IDisposable
     abstract member Initialise: unit -> unit
     abstract member OnUpdate: GameTime -> unit
     abstract member OnRender: unit -> unit
@@ -35,4 +36,4 @@ type ScreenManager (coordination) =
             |> Option.map (fun x -> x.Result)
             |> Option.defaultValue []
 
-        result |> List.tryHead
+        result |> List.tryLast

@@ -4,30 +4,28 @@ open Utilities
 open Myra.Graphics2D.UI
 open Microsoft.Xna.Framework.Input
 open Myra.Graphics2D.UI.File
+open System
+open System.Reactive.Subjects
+open System.Reactive.Linq
 
 type StartMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
     let root =
-        let panel = new Panel()
+        let panel = new Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = new VerticalStackPanel()
 
-        let positionedText = new Label();
-        positionedText.HorizontalAlignment <- HorizontalAlignment.Center;
-        positionedText.Text <- "Echoes of Elaria: The Crystals of Destiny";
-
-        let pressEnterText = new Label();
-        pressEnterText.HorizontalAlignment <- HorizontalAlignment.Center;
-        pressEnterText.Text <- "Press Enter";
+        let positionedText = new Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Echoes of Elaria: The Crystals of Destiny")
+        let pressEnterText = new Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Press Enter");
 
         stack.Widgets.Add(positionedText);
         stack.Widgets.Add(pressEnterText);
-
-        panel.VerticalAlignment <- VerticalAlignment.Center;
-        panel.HorizontalAlignment <- HorizontalAlignment.Center;
 
         panel.Widgets.Add(stack);
         panel
 
     interface IScreen with
+        member this.Dispose(): unit = 
+            ()
+
         member this.Initialise () =
             desktop.Root <- root
 
@@ -39,115 +37,100 @@ type StartMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
             desktop.Render()
 
 type StartOrLoadMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
+    let mutable selectedFilePath = None
+    let onLoadComplete (dialog: FileDialog) = 
+        if dialog.Result
+        then selectedFilePath <- Some dialog.FilePath
+
     let root =
+        let dialog = FileDialog(FileDialogMode.OpenFile, Filter="*.json")
+        dialog.Closed.Add(fun _ -> onLoadComplete dialog)
+
         let panel = new Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = new VerticalStackPanel()
         let startNewGame = new Button(Content = new Label(Text = "Start new game"), HorizontalAlignment = HorizontalAlignment.Center)
-        startNewGame.TouchDown.Add(fun _ -> updateFn.Invoke(StartLoadSelected {| DoLoad = false |}))
+
+        startNewGame.TouchDown.Add(fun _ -> updateFn.Invoke(StartLoadSelected None))
         let loadGame = new Button(Content = new Label(Text = "Load game"), HorizontalAlignment = HorizontalAlignment.Center)
-        loadGame.TouchDown.Add(fun _ -> updateFn.Invoke(StartLoadSelected {| DoLoad = true |}))
+        loadGame.TouchDown.Add(fun _ -> dialog.ShowModal(desktop))
+
         stack.Widgets.Add(startNewGame);
         stack.Widgets.Add(loadGame);
         panel.Widgets.Add(stack);
         panel
 
     interface IScreen with
+        member this.Dispose(): unit = 
+            ()
+
         member this.Initialise () =
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            ()
+            match selectedFilePath with
+            | Some filePath -> updateFn.Invoke(StartLoadSelected (Some filePath))
+            | None -> ()
 
         member this.OnRender () =
             desktop.Render()
 
-type LoadFileDialog (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
-    let dialog = FileDialog(FileDialogMode.OpenFile, Filter="*.json")
-
-    let onLoadComplete () = 
-        if dialog.Result
-        then updateFn.Invoke(LoadFileResult (Some dialog.FilePath))
-        else updateFn.Invoke(LoadFileResult None)
-    
-    interface IScreen with
-        member this.Initialise () =
-            dialog.Closed.Add(fun _ -> onLoadComplete ())
-            dialog.ShowModal(desktop)
-
-        member this.OnUpdate gameTime =
-            ()
-
-        member this.OnRender () =
-            // I cant figure out why but it throws an exception when I cancel the dialog.
-            try
-                desktop.Render()
-            with ex ->
-                ()
-
 type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
-    let mutable isEscButtonDown = true
+    let escKeySubject = new Subject<bool>()
+    let subscription = 
+        escKeySubject
+            .Buffer(2, 1)
+            .Select(List.ofSeq)
+            .Subscribe(function | [false; true] -> updateFn.Invoke(OpenMenuScreen) | _ -> ())
+
     let root =
-        let panel = new Panel()
-        let stack = new VerticalStackPanel()
+        let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
+        let stack = VerticalStackPanel()
 
-        let positionedText = new Label();
-        positionedText.HorizontalAlignment <- HorizontalAlignment.Center;
-        positionedText.Text <- "Game Screen";
-
+        let positionedText = new Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Game Screen");
         stack.Widgets.Add(positionedText);
-
-        panel.VerticalAlignment <- VerticalAlignment.Center;
-        panel.HorizontalAlignment <- HorizontalAlignment.Center;
-
         panel.Widgets.Add(stack);
         panel
 
     interface IScreen with
+        member this.Dispose(): unit = 
+            subscription.Dispose()
+            escKeySubject.Dispose()
+
         member this.Initialise () =
             desktop.Root <- root
-
+            
         member this.OnUpdate gameTime =
-            if (not isEscButtonDown && Keyboard.GetState().IsKeyDown(Keys.Escape))
-            then
-                isEscButtonDown <- true
-                updateFn.Invoke(OpenMenuScreen)
-            elif (isEscButtonDown && (Keyboard.GetState().IsKeyUp(Keys.Escape)))
-            then
-                isEscButtonDown <- false
+            escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
 
         member this.OnRender () =
             desktop.Render()
 
 type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
-    let mutable isEscButtonDown = true
+    let escKeySubject = new Subject<bool>()
+    let subscription = 
+        escKeySubject
+            .Buffer(2, 1)
+            .Select(List.ofSeq)
+            .Subscribe(function | [false; true] -> updateFn.Invoke(OpenGameScreen) | _ -> ())
     let root =
-        let panel = new Panel()
+        let panel = new Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = new VerticalStackPanel()
-
-        let positionedText = new Label();
-        positionedText.HorizontalAlignment <- HorizontalAlignment.Center;
-        positionedText.Text <- "Menu Screen";
+        let positionedText = new Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Menu Screen");
 
         stack.Widgets.Add(positionedText);
-
-        panel.VerticalAlignment <- VerticalAlignment.Center;
-        panel.HorizontalAlignment <- HorizontalAlignment.Center;
-
         panel.Widgets.Add(stack);
         panel
 
     interface IScreen with
+        member this.Dispose(): unit = 
+            subscription.Dispose()
+            escKeySubject.Dispose()
+
         member this.Initialise () =
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            if (not isEscButtonDown && Keyboard.GetState().IsKeyDown(Keys.Escape))
-            then
-                isEscButtonDown <- true
-                updateFn.Invoke(OpenGameScreen)
-            elif (isEscButtonDown && (Keyboard.GetState().IsKeyUp(Keys.Escape)))
-            then
-                isEscButtonDown <- false
+            escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
 
         member this.OnRender () =
             desktop.Render()
