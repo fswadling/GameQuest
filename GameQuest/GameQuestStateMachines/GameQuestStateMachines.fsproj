@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <Compile Include="Utilities.fs" />
-    <Compile Include="Menus.fs" />
-    <Compile Include="MenuJourney.fs" />
+    <Compile Include="Screens.fs" />
+    <Compile Include="ScreenJourney.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,24 +3,25 @@ open OrchestrationCE.Coordination
 
 open Microsoft.Xna.Framework
 
-type MenuJourneyEvent =
+type ScreenJourneyEvent =
     | Initialise
     | TitleScreenDone
     | StartLoadSelected of {| DoLoad: bool |}
     | LoadFileResult of string option
-    | Game
+    | OpenGameScreen
+    | OpenMenuScreen
 
-type IMenu =
+type IScreen =
     abstract member Initialise: unit -> unit
     abstract member OnUpdate: GameTime -> unit
     abstract member OnRender: unit -> unit
 
 // I needed to add this class to tame the type signature
 // consumed in the C# code.
-type StaticCoordinationRunner (coordination) =
+type ScreenManager (coordination) =
     let mutable coordination = Some coordination
 
-    member this.DoStep (e: MenuJourneyEvent): IMenu option =
+    member this.DoStep (e: ScreenJourneyEvent): IScreen option =
         let next =
             coordination 
             |> Option.map (fun x -> x (Some e))
