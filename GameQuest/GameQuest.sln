@@ -5,11 +5,13 @@ VisualStudioVersion = 17.5.33414.496
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GameQuest", "GameQuest\GameQuest.csproj", "{C183F5B9-D180-48F1-AFEB-784B52D0C92E}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "OrchestrationCE", "OrchestrationCE\OrchestrationCE.fsproj", "{8077AD00-B581-4EAE-BB32-8F459096BD1C}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "OrchestrationCE", "OrchestrationCE\OrchestrationCE.fsproj", "{8077AD00-B581-4EAE-BB32-8F459096BD1C}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "OrchestrationCETests", "OrchestrationCETests\OrchestrationCETests.fsproj", "{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "OrchestrationCETests", "OrchestrationCETests\OrchestrationCETests.fsproj", "{2B4ACEB7-E430-4D4E-910A-9EAC2AB5D100}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "GameQuestStateMachines", "GameQuestStateMachines\GameQuestStateMachines.fsproj", "{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "GameQuestFSharp", "GameQuestStateMachines\GameQuestFSharp.fsproj", "{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CoreGame", "CoreGame\CoreGame.fsproj", "{EA547956-06E9-441F-81F4-C23101AE82DF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +35,10 @@ Global
 		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D8C6B35F-FC33-4959-96DB-FEC43DC412CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA547956-06E9-441F-81F4-C23101AE82DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA547956-06E9-441F-81F4-C23101AE82DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA547956-06E9-441F-81F4-C23101AE82DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA547956-06E9-441F-81F4-C23101AE82DF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

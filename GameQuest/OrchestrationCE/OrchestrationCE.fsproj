@@ -12,4 +12,8 @@
 	<Compile Include="CancellableOrchestration.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="7.0.401" />
+  </ItemGroup>
+
 </Project>

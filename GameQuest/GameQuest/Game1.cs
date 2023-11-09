@@ -1,22 +1,24 @@
 ﻿using Microsoft.FSharp.Core;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using Myra;
-using static Utilities;
+using static Screens;
 
 namespace GameQuest
 {
     public class Game1 : Game
     {
-        private GraphicsDeviceManager _graphics;
-        private SpriteBatch _spriteBatch;
-        private StaticCoordinationRunner staticCoordinationRunner;
-        private FSharpOption<IMenu> menu;
+        private GraphicsDeviceManager graphics;
+        private SpriteBatch spriteBatch;
+        private ScreenManager screenManager;
+        private FSharpOption<IScreen> menu;
 
         public Game1()
         {
-            _graphics = new GraphicsDeviceManager(this);
+            this.graphics = new GraphicsDeviceManager(this);
+            graphics.IsFullScreen = false;
+            graphics.PreferredBackBufferWidth = 800;
+            graphics.PreferredBackBufferHeight = 600;
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
         }
@@ -26,9 +28,14 @@ namespace GameQuest
             base.Initialize();
         }
 
-        private void OnMenuJourneyEvent(Utilities.MenuJourneyEvent e)
+        private void OnScreenJourneyEvent(Screens.ScreenJourneyEvent e)
         {
-            this.menu = this.staticCoordinationRunner.DoStep(e);
+            if (this.menu != null)
+            {
+                this.menu.Value.Dispose();
+            }
+
+            this.menu = this.screenManager.DoStep(e);
 
             if (this.menu != null)
             {
@@ -38,13 +45,13 @@ namespace GameQuest
 
         protected override void LoadContent()
         {
-            _spriteBatch = new SpriteBatch(GraphicsDevice);
+            this.spriteBatch = new SpriteBatch(GraphicsDevice);
 
             MyraEnvironment.Game = this;
 
-            this.staticCoordinationRunner = new StaticCoordinationRunner(MenuJourney.StartMenuJouney(this.OnMenuJourneyEvent));
+            this.screenManager = new ScreenManager(ScreenJourney.ScreenJouney(this.OnScreenJourneyEvent));
 
-            this.menu = this.staticCoordinationRunner.DoStep(MenuJourneyEvent.Initialise);
+            this.menu = this.screenManager.DoStep(ScreenJourneyEvent.Initialise);
 
             if (this.menu != null)
             {
@@ -54,9 +61,6 @@ namespace GameQuest
 
         protected override void Update(GameTime gameTime)
         {
-            if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
-                Exit();
-
             if (this.menu != null)
             {
                 this.menu.Value.OnUpdate(gameTime);

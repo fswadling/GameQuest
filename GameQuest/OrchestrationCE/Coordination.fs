@@ -1,7 +1,5 @@
 module OrchestrationCE.Coordination
 
-open System.Runtime.CompilerServices
-
 type Coordination<'TEvent, 'TData> = 'TEvent -> CoordinationResult<'TEvent, 'TData>
 and CoordinationResult<'TEvent, 'TData> =
     { Result: 'TData list
