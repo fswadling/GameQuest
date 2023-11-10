@@ -18,38 +18,34 @@ let wrapText (text: string) =
 
 
 type ScreenJourneyEvent =
-    | Initialise
     | TitleScreenDone
     | StartLoadSelected of string option
     | OpenGameScreen of GameState
     | OpenMenuScreen of GameState
 
+[<AllowNullLiteral>]
 type IScreen =
     inherit IDisposable
     abstract member Initialise: unit -> unit
     abstract member OnUpdate: GameTime -> unit
     abstract member OnRender: unit -> unit
 
-// I needed to add this class to tame the type signature
-// consumed in the C# code.
+// Consumed within C# so using nulls rather than options
+[<AllowNullLiteral>]
 type ScreenManager (coordination) =
-    let mutable coordination = Some coordination
+    let screen = 
+        lazy (
+            let { Result = screens } = coordination None 
+            screens |> List.tryLast
+        )
 
-    member this.DoStep (e: ScreenJourneyEvent): IScreen option =
-        let next =
-            coordination 
-            |> Option.map (fun x -> x (Some e))
-            |> Option.bind (fun x -> x.Next)
+    member this.Screen with get() : IScreen = if screen.Value.IsSome then screen.Value.Value else null
 
-        coordination <- next
-
-        let result =
-            coordination
-            |> Option.map (fun x -> x (None))
-            |> Option.map (fun x -> x.Result)
-            |> Option.defaultValue []
-
-        result |> List.tryLast
+    member this.DoStep (e: ScreenJourneyEvent) =
+        let { Next = next } = coordination (Some e)
+        next 
+        |> Option.map ScreenManager
+        |> Option.defaultValue null
 
 type StartMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
     let root =
@@ -152,7 +148,7 @@ type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
             panel
         else
         
-        let nonEventExpositions = gameState.NoneventExpositions
+        let nonEventExpositions = gameState.NonEventExpositions
 
         for exposition in nonEventExpositions do
             let text = wrapText (exposition.ToString())
@@ -184,7 +180,7 @@ type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
         member this.OnRender () =
             desktop.Render()
 
-type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState) =
+type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState, story: Story.Story) =
     let mutable gameState = gameState
 
     let escKeySubject = new Subject<bool>()
@@ -194,12 +190,38 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
             .Select(List.ofSeq)
             .Subscribe(function | [false; true] -> updateFn.Invoke(OpenGameScreen gameState) | _ -> ())
 
+    let saveGame () =
+        let dialog = FileDialog(FileDialogMode.SaveFile, Filter="*.json")
+
+        dialog.Closed.Add(fun _ -> 
+            if dialog.Result
+            then gameState.Save(dialog.FilePath))
+
+        do dialog.ShowModal(desktop)
+
+    let loadGame () =
+        let dialog = FileDialog(FileDialogMode.OpenFile, Filter="*.json")
+
+        dialog.Closed.Add(fun _ -> 
+            if dialog.Result 
+            then 
+                let newGameState = GameState.Load(dialog.FilePath, story)
+                if newGameState.IsSome
+                then gameState <- newGameState.Value)
+
+        do dialog.ShowModal(desktop)
+
     let root =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = VerticalStackPanel()
-        let positionedText = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Menu Screen");
-
-        stack.Widgets.Add(positionedText);
+        let saveButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Save");
+        let saveButton = Button(Content = saveButtonLabel)
+        saveButton.TouchDown.Add(fun _ -> saveGame ())
+        let loadButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Load");
+        let loadButton = Button(Content = loadButtonLabel)
+        loadButton.TouchDown.Add(fun _ -> loadGame ())
+        stack.Widgets.Add(saveButton);
+        stack.Widgets.Add(loadButton);
         panel.Widgets.Add(stack);
         panel
 

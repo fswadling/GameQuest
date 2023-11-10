@@ -1,10 +1,10 @@
 ﻿module ScreenJourney
 
+open Myra.Graphics2D.UI
 open OrchestrationCE.Coordination
 open OrchestrationCE.Orchestration
 open Screens
-open Myra.Graphics2D.UI
-open FSharp.Json
+open GameState
 
 let rec mainLoop desktop updateFn gameState = orchestration {
     let! gameState =
@@ -13,7 +13,7 @@ let rec mainLoop desktop updateFn gameState = orchestration {
 
     let! gameState =
         event (function | OpenGameScreen state -> Some state | _ -> None)
-        |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState) :> IScreen]
+        |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
 
     return! mainLoop desktop updateFn gameState
 }
@@ -25,15 +25,14 @@ let ScreenJouney updateFn =
         do! event (function | TitleScreenDone -> Some () | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.StartMenu(desktop, updateFn) :> IScreen] 
 
-        let! filename = 
+        let! fileName = 
             event (function | StartLoadSelected x -> Some x | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.StartOrLoadMenu(desktop, updateFn) :> IScreen]
 
         let gameState: GameState.GameState option = 
-            filename 
-            |> Option.map Json.deserialize<Story.StoryEvent list> 
-            |> Option.defaultValue []
-            |> fun events -> GameState.GameState.Load(Story.story, events)
+            match fileName with
+            | Some fileName -> GameState.Load(fileName, Story.story)
+            | None -> Some (GameState.New(Story.story))
 
         do! 
             match gameState with
