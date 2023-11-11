@@ -13,6 +13,7 @@ open LaraStory
 type StoryEvent = 
     | AdventureBegins
     | CalamityOccurs
+    | BattleWon
     | AriaEvent of AriaInternalEvent
     | KaiEvent of KaiInternalEvent
     | LaraEvent of LaraInternalEvent
@@ -168,6 +169,10 @@ let mainQuest =
                 [ Exposition (Exposition.CalamityOccurs, None)
                   Interactive (Interaction.Continue, StoryEvent.CalamityOccurs) ]
                 (event (function | { Event = StoryEvent.CalamityOccurs } -> Some () | _ -> None))
+
+        do! raiseToOrchestrationWithActions
+                [ Battle ]
+                (event (function | { Event = StoryEvent.BattleWon } -> Some () | _ -> None))
 
         yield aria
         yield kai

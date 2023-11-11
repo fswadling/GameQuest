@@ -47,7 +47,7 @@ type ScreenManager (coordination) =
         |> Option.map ScreenManager
         |> Option.defaultValue null
 
-type StartMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
+type StartMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>) =
     let root =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = VerticalStackPanel()
@@ -70,12 +70,12 @@ type StartMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
 
         member this.OnUpdate gameTime =
             if (Keyboard.GetState().IsKeyDown(Keys.Enter))
-            then updateFn.Invoke(TitleScreenDone)
+            then updateScreenFn.Invoke(TitleScreenDone)
 
         member this.OnRender () =
             desktop.Render()
 
-type StartOrLoadMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>) =
+type StartOrLoadMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>) =
     let mutable selectedFilePath = None
     let onLoadComplete (dialog: FileDialog) = 
         if dialog.Result
@@ -89,7 +89,7 @@ type StartOrLoadMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEve
         let stack = VerticalStackPanel()
         let startNewGame = Button(Content = Label(Text = "Start new game"), HorizontalAlignment = HorizontalAlignment.Center)
 
-        startNewGame.TouchDown.Add(fun _ -> updateFn.Invoke(StartLoadSelected None))
+        startNewGame.TouchDown.Add(fun _ -> updateScreenFn.Invoke(StartLoadSelected None))
         let loadGame = Button(Content = Label(Text = "Load game"), HorizontalAlignment = HorizontalAlignment.Center)
         loadGame.TouchDown.Add(fun _ -> dialog.ShowModal(desktop))
 
@@ -107,13 +107,13 @@ type StartOrLoadMenu (desktop: Desktop, updateFn: System.Action<ScreenJourneyEve
 
         member this.OnUpdate gameTime =
             match selectedFilePath with
-            | Some filePath -> updateFn.Invoke(StartLoadSelected (Some filePath))
+            | Some filePath -> updateScreenFn.Invoke(StartLoadSelected (Some filePath))
             | None -> ()
 
         member this.OnRender () =
             desktop.Render()
 
-type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState.GameState) =
+type GameScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, gameState: GameState.GameState) =
     let mutable gameState = gameState
     
     let escKeySubject = new Subject<bool>()
@@ -122,13 +122,16 @@ type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
         escKeySubject
             .Buffer(2, 1)
             .Select(List.ofSeq)
-            .Subscribe(function | [false; true] -> updateFn.Invoke(OpenMenuScreen gameState) | _ -> ())
+            .Subscribe(function | [false; true] -> updateScreenFn.Invoke(OpenMenuScreen gameState) | _ -> ())
 
     let doEvent buildScreen event =
         match gameState.DoEvent event with
         | Some newState -> 
-            gameState <- newState
-            desktop.Root <- (buildScreen newState)
+            if (not newState.HasBattle) then
+                gameState <- newState
+                desktop.Root <- (buildScreen newState)
+            else
+                updateScreenFn.Invoke(OpenBattleScreen newState)
         | None -> ()
 
     let rec buildScreen (gameState: GameState) =
@@ -147,17 +150,13 @@ type GameScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
             stack.Widgets.Add(continueBtn);
             panel
         else
-        
-        let nonEventExpositions = gameState.NonEventExpositions
 
-        for exposition in nonEventExpositions do
+        for exposition in gameState.NonEventExpositions do
             let text = wrapText (exposition.ToString())
             let label = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = text)
             stack.Widgets.Add(label)
-        
-        let interactives = gameState.Interactives
 
-        for (interaction, event) in interactives do
+        for (interaction, event) in gameState.Interactives do
             let label = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = interaction.ToString())
             let button = Button(Content = label)
             button.TouchDown.Add(fun _ -> doEvent buildScreen event)
@@ -239,14 +238,30 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
         member this.OnRender () =
             desktop.Render()
 
-type BattleScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState) =
-    let mutable gameState = gameState
+type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, gameState: GameState) =
+    let winBattle () =
+        let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
+        match newState with
+        | Some newState -> 
+            updateScreenFn.Invoke(OpenGameScreen newState)
+        | None -> ()
+
+    let root =
+        let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
+        let stack = VerticalStackPanel()
+        let winButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Win");
+        let winButton = Button(Content = winButtonLabel)
+        winButton.TouchDown.Add(fun _ -> winBattle ())
+        stack.Widgets.Add(winButton);
+        panel.Widgets.Add(stack);
+        panel
+
     interface IScreen with
         member this.Dispose(): unit = 
             ()
 
         member this.Initialise () =
-            ()
+            desktop.Root <- root
 
         member this.OnUpdate gameTime =
             ()

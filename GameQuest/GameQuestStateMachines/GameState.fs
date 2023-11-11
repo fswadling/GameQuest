@@ -18,6 +18,9 @@ type GameState private (storyEvents: StoryEvent list, story: Story) =
     member this.NonEventExpositions with get () =
        List.choose (function | Utilities.Exposition (ex, None) -> Some ex | _ -> None) actions.Value
 
+    member this.HasBattle with get () =
+       List.exists (function | Utilities.Battle -> true | _ -> false) actions.Value
+
     member this.Interactives with get () =
         List.choose (function | Utilities.Interactive (i, e) -> Some (i, e) | _ -> None) actions.Value
 

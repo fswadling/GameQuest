@@ -16,10 +16,10 @@ let rec mainLoop desktop updateFn gameState = orchestration {
 
     let! gameState =
         match screenEvent with
-        | OpenMenuScreen state ->
+        | OpenMenuScreen gameState ->
             event (function | OpenGameScreen state -> Some state | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
-        | OpenBattleScreen state ->
+        | OpenBattleScreen gameState ->
             event (function | OpenGameScreen state -> Some state | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.BattleScreen(desktop, updateFn, gameState) :> IScreen]
         | _ -> failwith "Unexpected screen event"
