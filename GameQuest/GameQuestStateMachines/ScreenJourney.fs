@@ -7,13 +7,22 @@ open Screens
 open GameState
 
 let rec mainLoop desktop updateFn gameState = orchestration {
-    let! gameState =
-        event (function | OpenMenuScreen state -> Some state | _ -> None)
+    let! screenEvent =
+        event (function 
+            | OpenMenuScreen state -> Some (OpenMenuScreen state)
+            | OpenBattleScreen state -> Some (OpenBattleScreen state)
+            | _ -> None)
         |> raiseToOrchestrationWithActions [new Screens.GameScreen(desktop, updateFn, gameState) :> IScreen]
 
     let! gameState =
-        event (function | OpenGameScreen state -> Some state | _ -> None)
-        |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
+        match screenEvent with
+        | OpenMenuScreen state ->
+            event (function | OpenGameScreen state -> Some state | _ -> None)
+            |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
+        | OpenBattleScreen state ->
+            event (function | OpenGameScreen state -> Some state | _ -> None)
+            |> raiseToOrchestrationWithActions [new Screens.BattleScreen(desktop, updateFn, gameState) :> IScreen]
+        | _ -> failwith "Unexpected screen event"
 
     return! mainLoop desktop updateFn gameState
 }

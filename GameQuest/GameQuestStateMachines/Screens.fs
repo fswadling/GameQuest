@@ -16,12 +16,12 @@ let wrapText (text: string) =
     |> Array.map (fun x -> String.Join(" ", x)) 
     |> fun x -> String.Join("\n", x)
 
-
 type ScreenJourneyEvent =
     | TitleScreenDone
     | StartLoadSelected of string option
     | OpenGameScreen of GameState
     | OpenMenuScreen of GameState
+    | OpenBattleScreen of GameState
 
 [<AllowNullLiteral>]
 type IScreen =
@@ -235,6 +235,21 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
 
         member this.OnUpdate gameTime =
             escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
+
+        member this.OnRender () =
+            desktop.Render()
+
+type BattleScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState) =
+    let mutable gameState = gameState
+    interface IScreen with
+        member this.Dispose(): unit = 
+            ()
+
+        member this.Initialise () =
+            ()
+
+        member this.OnUpdate gameTime =
+            ()
 
         member this.OnRender () =
             desktop.Render()
