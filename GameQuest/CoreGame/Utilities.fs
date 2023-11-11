@@ -20,19 +20,23 @@ let baseStoryWithState updateState initState =
 type Action<'TEvent, 'TExposition, 'TInteractive> =
     | Exposition of 'TExposition * ('TEvent option)
     | Interactive of 'TInteractive * 'TEvent
+    | Battle
 
 module Action =
     let mapEvent f = function
         | Exposition (msg, event) -> Exposition (msg, event |> Option.map f)
         | Interactive (msg, event) -> Interactive (msg, f event)
+        | Battle -> Battle
 
     let mapExposition f = function
         | Exposition (msg, event) -> Exposition (f msg, event)
         | Interactive (msg, event) -> Interactive (msg, event)
+        | Battle -> Battle
 
     let mapInteractive f = function
         | Interactive (msg, event) -> Interactive (f msg, event)
         | Exposition (msg, event) -> Exposition (msg, event)
+        | Battle -> Battle
 
 let loadGame story gameEvents =
     let rec loadGame' story gameEvents =

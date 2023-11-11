@@ -8,7 +8,6 @@ open StoryShared
 type AriaInternalEvent = 
     | Recruited
     | Introduced
-    | Continue
     | ReachesFirstCrystal of Crystal
 
 type AriaExternalEvent = 

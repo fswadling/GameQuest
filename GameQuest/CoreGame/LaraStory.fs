@@ -8,7 +8,6 @@ open StoryShared
 type LaraInternalEvent = 
     | Recruited
     | Introduced
-    | Continue
     | ReachesThirdCrystal of Crystal
 
 type LaraExternalEvent = 

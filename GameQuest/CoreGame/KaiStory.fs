@@ -8,7 +8,6 @@ open StoryShared
 type KaiInternalEvent = 
     | Recruited
     | Introduced
-    | Continue
     | ReachesSecondCrystal of Crystal
 
 type KaiExternalEvent = 
