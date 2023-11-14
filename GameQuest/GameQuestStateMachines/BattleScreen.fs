@@ -4,116 +4,52 @@ open System
 open Myra.Graphics2D.UI
 open Screens
 open GameState
-open System.Reactive.Subjects
-open System.Reactive.Linq
 open Microsoft.Xna.Framework
 
+// Using a struct should in theory improve performance on the loop as all the team data will be colocated on the stack
 type TeamMemberState =
-    | WaitingFrom of TimeSpan
-    | Ready
-    | Dead
-
-// Use a mutable dictionary to avoid unnecessary allocations
-type ProgressState () =
-    let progress = System.Collections.Generic.Dictionary<StoryShared.TeamMember, float>()
-    let completedSubject = new Subject<StoryShared.TeamMember>()
-
-    member this.GetProgress(teamMember: StoryShared.TeamMember) = 
-        progress.[teamMember]
-
-    member this.SetProgress(teamMember: StoryShared.TeamMember, value: float) = 
-        if progress.ContainsKey(teamMember) && progress.[teamMember] < 1.0 && value >= 1.0 then
-            progress.[teamMember] <- 1.0
-            completedSubject.OnNext(teamMember)
-        else
-            progress.[teamMember] <- value
- 
-    member this.Dispose(): unit =
-        completedSubject.Dispose();
-
-    member this.Completed with get () = completedSubject.AsObservable() 
-
-    interface IDisposable with
-        member this.Dispose(): unit =
-            this.Dispose()
-
-type TeamState(teamMembers: Set<StoryShared.TeamMember>, startTime: TimeSpan) =
-    let teamState =
-        teamMembers
-        |> Seq.map(fun teamMember -> teamMember, WaitingFrom startTime) 
-        |> dict
-        |> System.Collections.Generic.Dictionary
-
-    let progressState = new ProgressState()
-
-    let completionSubscription = 
-        progressState.Completed
-        |> Observable.subscribe(
-            fun teamMember ->
-                teamState.[teamMember] <- Ready
-                )
+    struct
+        val TeamMember: StoryShared.TeamMember
+        val ProgressBar: HorizontalProgressBar
+        val mutable WaitFrom: TimeSpan
+        val mutable AwaitingStart: bool
         
-    member this.OnUpdate(time: GameTime) =
-        for kvp in teamState do
-            match kvp.Value with
-            | WaitingFrom startTime ->
-                let progress = (time.TotalGameTime - startTime) / TimeSpan.FromSeconds(10.0)
-                progressState.SetProgress(kvp.Key, progress)
-            | Ready ->
-                progressState.SetProgress(kvp.Key, 1.0)
-            | Dead ->
-                progressState.SetProgress(kvp.Key, 0.0)
-
-    member this.Dispose(): unit =
-        completionSubscription.Dispose()
-        progressState.Dispose();
-
-    member this.GetProgress(teamMember: StoryShared.TeamMember) =
-       progressState.GetProgress(teamMember)
-
-    interface IDisposable with
-        member this.Dispose(): unit =
-            this.Dispose()
-        
+        new (teamMember, progressBar, waitFrom, awaitingStart) =
+            { TeamMember = teamMember; ProgressBar = progressBar; WaitFrom = waitFrom; AwaitingStart = awaitingStart }
+    end     
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
-    let mutable teamState: Option<TeamState> = None
-
     let winBattle () =
         let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
         match newState with
         | Some newState -> updateScreenFn.Invoke(OpenGameScreen newState)
         | None -> ()
 
-    let buildTeamMemberPanel teamMember =
-        let panel = HorizontalStackPanel()
-        let label = Label(Text = teamMember.ToString())
-        let progressBar = HorizontalProgressBar(Width=100)
-        panel.Widgets.Add(label)
-        panel.Widgets.Add(progressBar)
-        (panel, progressBar)
-
-    let teamPanels =
+    let teamState =
         storyState.CompanionsRecruited
-            |> Seq.map (fun teamMember -> teamMember, buildTeamMemberPanel teamMember)
-            |> Map.ofSeq
+        |> Seq.map(fun teamMember -> TeamMemberState(teamMember, HorizontalProgressBar(Width=100), TimeSpan.Zero, true))
+        |> Seq.toArray
 
-    let updateTeamLabels () =
-       for kvp in teamPanels do
-            let _, progressBar = kvp.Value
-            let progress = 
-                teamState 
-                |> Option.map (fun battleState -> (float32)(battleState.GetProgress(kvp.Key)))
-                |> Option.defaultValue 0.0f
-            progressBar.Value <- progress * 100.0f
+    let onUpdate(time: GameTime) =
+        for i in 0 .. teamState.Length - 1 do
+            if (teamState.[i].AwaitingStart) then
+                teamState.[i].WaitFrom <- time.TotalGameTime
+                teamState.[i].AwaitingStart <- false
+                teamState.[i].ProgressBar.Value <- 0.0f
+
+            if (time.TotalGameTime - teamState.[i].WaitFrom > TimeSpan.FromSeconds(10.0)) then
+                teamState.[i].ProgressBar.Value <- 1.0f * 100.0f
+            else
+                let progress = (time.TotalGameTime - teamState.[i].WaitFrom) / TimeSpan.FromSeconds(10.0)
+                teamState.[i].ProgressBar.Value <- (float32)progress * 100.0f
 
     let teamPanel =
-        teamPanels
-            |> Seq.fold (fun (stack: StackPanel) memberPanel -> 
-                let panel, _ = memberPanel.Value
-                stack.Widgets.Add(panel)
-                stack)
-                (HorizontalStackPanel())
+        let panel = HorizontalStackPanel()
+        for teamMemberState in teamState do
+            let label = Label(Text = teamMemberState.TeamMember.ToString())
+            panel.Widgets.Add(label)
+            panel.Widgets.Add(teamMemberState.ProgressBar)
+        panel
 
     let root =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
@@ -129,18 +65,13 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
     interface IScreen with
         member this.Dispose(): unit = 
-            if (teamState.IsSome) then
-                teamState.Value.Dispose()
+            ()
 
         member this.Initialise () =
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            if (teamState.IsNone) then
-                teamState <- Some (new TeamState(storyState.CompanionsRecruited, gameTime.TotalGameTime))
-            else
-                do teamState.Value.OnUpdate gameTime
-                do updateTeamLabels ()
+            do onUpdate gameTime
 
         member this.OnRender () =
             desktop.Render()
