@@ -4,13 +4,14 @@ open Myra.Graphics2D.UI
 open OrchestrationCE.Coordination
 open OrchestrationCE.Orchestration
 open Screens
+open BattleScreen
 open GameState
 
 let rec mainLoop desktop updateFn gameState = orchestration {
     let! screenEvent =
         event (function 
             | OpenMenuScreen state -> Some (OpenMenuScreen state)
-            | OpenBattleScreen state -> Some (OpenBattleScreen state)
+            | OpenBattleScreen (battleState, gameState) -> Some (OpenBattleScreen (battleState, gameState))
             | _ -> None)
         |> raiseToOrchestrationWithActions [new Screens.GameScreen(desktop, updateFn, gameState) :> IScreen]
 
@@ -19,9 +20,9 @@ let rec mainLoop desktop updateFn gameState = orchestration {
         | OpenMenuScreen gameState ->
             event (function | OpenGameScreen state -> Some state | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
-        | OpenBattleScreen gameState ->
+        | OpenBattleScreen (battleState, gameState) ->
             event (function | OpenGameScreen state -> Some state | _ -> None)
-            |> raiseToOrchestrationWithActions [new Screens.BattleScreen(desktop, updateFn, gameState) :> IScreen]
+            |> raiseToOrchestrationWithActions [new BattleScreen(desktop, updateFn, battleState, gameState) :> IScreen]
         | _ -> failwith "Unexpected screen event"
 
     return! mainLoop desktop updateFn gameState

@@ -5,9 +5,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup> 
     <Compile Include="GameState.fs" />
     <Compile Include="Screens.fs" />
+    <Compile Include="BattleScreen.fs" />
     <Compile Include="ScreenJourney.fs" />
   </ItemGroup>
 

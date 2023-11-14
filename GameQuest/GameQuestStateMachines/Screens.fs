@@ -21,7 +21,7 @@ type ScreenJourneyEvent =
     | StartLoadSelected of string option
     | OpenGameScreen of GameState
     | OpenMenuScreen of GameState
-    | OpenBattleScreen of GameState
+    | OpenBattleScreen of Story.State * GameState
 
 [<AllowNullLiteral>]
 type IScreen =
@@ -127,11 +127,12 @@ type GameScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEv
     let doEvent buildScreen event =
         match gameState.DoEvent event with
         | Some newState -> 
-            if (not newState.HasBattle) then
+            match newState.Battle with
+            | None ->
                 gameState <- newState
                 desktop.Root <- (buildScreen newState)
-            else
-                updateScreenFn.Invoke(OpenBattleScreen newState)
+            | Some battleState ->
+                updateScreenFn.Invoke(OpenBattleScreen (battleState, newState))
         | None -> ()
 
     let rec buildScreen (gameState: GameState) =
@@ -238,33 +239,3 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
         member this.OnRender () =
             desktop.Render()
 
-type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, gameState: GameState) =
-    let winBattle () =
-        let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
-        match newState with
-        | Some newState -> 
-            updateScreenFn.Invoke(OpenGameScreen newState)
-        | None -> ()
-
-    let root =
-        let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
-        let stack = VerticalStackPanel()
-        let winButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Win");
-        let winButton = Button(Content = winButtonLabel)
-        winButton.TouchDown.Add(fun _ -> winBattle ())
-        stack.Widgets.Add(winButton);
-        panel.Widgets.Add(stack);
-        panel
-
-    interface IScreen with
-        member this.Dispose(): unit = 
-            ()
-
-        member this.Initialise () =
-            desktop.Root <- root
-
-        member this.OnUpdate gameTime =
-            ()
-
-        member this.OnRender () =
-            desktop.Render()

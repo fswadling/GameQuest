@@ -13,16 +13,18 @@ type GameState private (storyEvents: StoryEvent list, story: Story) =
         )
 
     member this.EventExpositions with get () =
-        List.choose (function | Utilities.Exposition (ex, Some e) -> Some (ex, e) | _ -> None) actions.Value
+        List.choose (function | Exposition (ex, Some e) -> Some (ex, e) | _ -> None) actions.Value
 
     member this.NonEventExpositions with get () =
-       List.choose (function | Utilities.Exposition (ex, None) -> Some ex | _ -> None) actions.Value
+        List.choose (function | Exposition (ex, None) -> Some ex | _ -> None) actions.Value
 
-    member this.HasBattle with get () =
-       List.exists (function | Utilities.Battle -> true | _ -> false) actions.Value
+    member this.Battle with get () =
+        actions.Value
+        |> List.choose (function | Battle state -> Some state | _ -> None)
+        |> List.tryHead
 
     member this.Interactives with get () =
-        List.choose (function | Utilities.Interactive (i, e) -> Some (i, e) | _ -> None) actions.Value
+        List.choose (function | Interactive (i, e) -> Some (i, e) | _ -> None) actions.Value
 
     member this.StoryEvents with get () = storyEvents
 

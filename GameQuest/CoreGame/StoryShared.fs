@@ -7,6 +7,7 @@ type Crystal =
     | Air
 
 type TeamMember =
+    | You
     | Aria
     | Kai
     | Lara

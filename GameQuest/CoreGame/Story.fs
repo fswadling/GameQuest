@@ -57,14 +57,12 @@ type Interaction =
         | KaiInteraction i -> i.ToString ()
         | LaraInteraction i -> i.ToString ()
 
-type Story = Coordination<StoryEvent option, Action<StoryEvent, Exposition, Interaction>>
-
 type State =
     { CompanionsRecruited: Set<TeamMember>
       CrystalsFound: Set<Crystal> }
 
 module State =
-    let init = { CompanionsRecruited = Set.empty; CrystalsFound = Set.empty }
+    let init = { CompanionsRecruited = (Set.singleton You); CrystalsFound = Set.empty }
 
     let updateState state = function
         | CrystalFound crystal -> { state with State.CrystalsFound = Set.add crystal state.CrystalsFound }
@@ -72,6 +70,18 @@ module State =
         | KaiEvent KaiInternalEvent.Recruited -> { state with State.CompanionsRecruited = Set.add Kai state.CompanionsRecruited }
         | LaraEvent LaraInternalEvent.Recruited -> { state with State.CompanionsRecruited = Set.add Lara state.CompanionsRecruited }
         | _ -> state
+
+type MainAction<'TEvent, 'TExposition, 'TInteractive, 'TBattleState> =
+    | Exposition of 'TExposition * ('TEvent option)
+    | Interactive of 'TInteractive * 'TEvent
+    | Battle of 'TBattleState
+
+module MainAction =
+    let fromAction = function
+        | Action.Exposition (exposition, event) -> Exposition (exposition, event)
+        | Action.Interactive (interactive, event) -> Interactive (interactive, event)      
+
+type Story = Coordination<StoryEvent option, MainAction<StoryEvent, Exposition, Interaction, State>>
 
 let getAriaState { State.CrystalsFound = crystalsFound } =
    { AriaState.CrystalsFound = crystalsFound }
@@ -90,7 +100,8 @@ let aria =
     |> Orchestration.mapBreak 
         ((Action.mapEvent AriaEvent) 
         >> (Action.mapExposition AriaExposition) 
-        >> (Action.mapInteractive AriaInteraction))
+        >> (Action.mapInteractive AriaInteraction)
+        >> MainAction.fromAction)
 
 let getKaiState { State.CrystalsFound = crystalsFound } =
    { KaiState.CrystalsFound = crystalsFound }
@@ -109,7 +120,8 @@ let kai =
     |> Orchestration.mapBreak 
         ((Action.mapEvent KaiEvent) 
         >> (Action.mapExposition KaiExposition) 
-        >> (Action.mapInteractive KaiInteraction))
+        >> (Action.mapInteractive KaiInteraction)
+        >> MainAction.fromAction)
 
 let getLaraState { State.CrystalsFound = crystalsFound } =
    { LaraState.CrystalsFound = crystalsFound }
@@ -128,7 +140,8 @@ let lara =
     |> Orchestration.mapBreak 
         ((Action.mapEvent LaraEvent) 
         >> (Action.mapExposition LaraExposition) 
-        >> (Action.mapInteractive LaraInteraction))
+        >> (Action.mapInteractive LaraInteraction)
+        >> MainAction.fromAction)
 
 let rec crystalQuest (crystalsRemaining: Set<Crystal>) =
     orchestration {
@@ -165,13 +178,14 @@ let mainQuest =
                   Interactive (Interaction.Continue, StoryEvent.AdventureBegins) ]
                 (event (function | { Event = StoryEvent.AdventureBegins } -> Some () | _ -> None))
 
-        do! raiseToOrchestrationWithActions
+        let! state =
+            raiseToOrchestrationWithActions
                 [ Exposition (Exposition.CalamityOccurs, None)
                   Interactive (Interaction.Continue, StoryEvent.CalamityOccurs) ]
-                (event (function | { Event = StoryEvent.CalamityOccurs } -> Some () | _ -> None))
+                (event (function | { Event = StoryEvent.CalamityOccurs; State = state } -> Some state | _ -> None))
 
         do! raiseToOrchestrationWithActions
-                [ Battle ]
+                [ Battle state]
                 (event (function | { Event = StoryEvent.BattleWon } -> Some () | _ -> None))
 
         yield aria
@@ -179,9 +193,17 @@ let mainQuest =
         yield lara
 
         do! raiseToOrchestration
-                (event (function | { State = { State.CompanionsRecruited = companionsRecruited } } when companionsRecruited.Count = 3 -> Some () | _ -> None))
+                (event (function | { State = { State.CompanionsRecruited = companionsRecruited } } when companionsRecruited.Count = 4 -> Some () | _ -> None))
 
         do! crystalQuest (Set.ofList [ Earth; Fire; Water; Air ])
+
+        let! state = 
+            raiseToOrchestration
+                (event (function | { State = state } -> Some state))
+
+        do! raiseToOrchestrationWithActions
+                [ Battle state]
+                (event (function | { Event = StoryEvent.BattleWon } -> Some () | _ -> None))
 
         do! raiseToOrchestrationWithActions
                 [ Exposition (Exposition.AdventureEnds, Some TheEnd) ]
