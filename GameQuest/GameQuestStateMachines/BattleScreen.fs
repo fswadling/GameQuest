@@ -5,45 +5,18 @@ open Myra.Graphics2D.UI
 open Screens
 open GameState
 open Microsoft.Xna.Framework
-open System.Collections.Generic
 
-type TeamMemberAction =
+type BattleMsg =
     | StartWaiting
     | DoProgress of TimeSpan
-    | ShowMenu
 
-type TeamMemberState =
-    struct
-        val TeamMember: StoryShared.TeamMember
-        val ProgressBar: HorizontalProgressBar
-        val MessageQueue: System.Collections.Generic.Queue<TeamMemberAction>
-        new (teamMember, progressBar, initialActions: TeamMemberAction seq) =
-            { TeamMember = teamMember; ProgressBar = progressBar; MessageQueue = Queue<TeamMemberAction>(initialActions) }
-    end 
-
-    member this.BuildTeamMemberForm() =
-        let panel = VerticalStackPanel()
-        let label = Label(Text = teamMemberState.TeamMember.ToString())
-        panel
-
-    member this.OnUpdate(time: GameTime) =
-        match this.MessageQueue.TryDequeue() with
-        | true, TeamMemberAction.StartWaiting -> 
-            do this.MessageQueue.Enqueue(TeamMemberAction.DoProgress time.TotalGameTime)
-        | true, TeamMemberAction.DoProgress waitFrom when time.TotalGameTime - waitFrom > TimeSpan.FromSeconds(10.0) -> 
-            ()
-        | true, TeamMemberAction.DoProgress waitFrom ->
-            let progress = (time.TotalGameTime - waitFrom) / TimeSpan.FromSeconds(10.0)
-            this.ProgressBar.Value <- Math.Min((float32)progress * 100.0f, 100.0f)
-            if (this.ProgressBar.Value < 100.0f) then
-                do this.MessageQueue.Enqueue(TeamMemberAction.DoProgress waitFrom)
-            else
-                do this.MessageQueue.Enqueue(TeamMemberAction.ShowMenu)
-        
-        | false, _ -> ()
-
+type TeamMemberMsg =
+    { TeamMember: StoryShared.TeamMember; Message: BattleMsg  }
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
+    let startMsgs = Seq.map (fun tm -> { TeamMember = tm; Message = StartWaiting }) storyState.CompanionsRecruited
+    let queue = System.Collections.Generic.Queue<TeamMemberMsg>(startMsgs)
+
     let winBattle () =
         let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
         match newState with
@@ -53,22 +26,30 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
     let teamState =
         storyState.CompanionsRecruited
         |> Seq.map(fun teamMember -> 
-            TeamMemberState(
-                teamMember, 
-                HorizontalProgressBar(Width=100),  
-                [ TeamMemberAction.StartWaiting ]))
-        |> Seq.toArray
+            teamMember,
+            HorizontalProgressBar(Width=100))
+        |> dict
 
-    let onUpdate(time: GameTime) =
-        for i in 0 .. teamState.Length - 1 do
-            do teamState[i].OnUpdate(time)
+    let rec processQueue (time: GameTime) =
+        match queue.TryDequeue() with
+        | true, { TeamMember = tm; Message = StartWaiting } -> 
+            Some { TeamMember = tm; Message = DoProgress time.TotalGameTime }
+        | true, { TeamMember = tm; Message = DoProgress waitFrom } ->
+            let progress = (time.TotalGameTime - waitFrom) / TimeSpan.FromSeconds(10.0)
+            let progressBar = teamState.[tm] 
+            if (progressBar.Value < 100.0f) then
+                progressBar.Value <- (float32)(progress * 100.0)
+                Some { TeamMember = tm; Message = DoProgress waitFrom }
+            else
+                processQueue time
+        | false, _ -> None
 
     let teamPanel =
         let panel = HorizontalStackPanel()
         for teamMemberState in teamState do
-            let label = Label(Text = teamMemberState.TeamMember.ToString())
+            let label = Label(Text = teamMemberState.Key.ToString())
             panel.Widgets.Add(label)
-            panel.Widgets.Add(teamMemberState.ProgressBar)
+            panel.Widgets.Add(teamMemberState.Value)
         panel
 
     let root =
@@ -91,7 +72,10 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            do onUpdate gameTime
+            let msg = processQueue gameTime
+            match msg with
+            | Some msg -> queue.Enqueue msg
+            | None -> ()
 
         member this.OnRender () =
             desktop.Render()
