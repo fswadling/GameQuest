@@ -6,15 +6,21 @@ open Screens
 open GameState
 open Microsoft.Xna.Framework
 
+type IActor =
+   abstract member this.OnUpdate gameTime : unit
+
+
+
 type BattleMsg =
-    | StartWaiting
-    | DoProgress of TimeSpan
+    | StartWaiting of HorizontalProgressBar
+    | DoProgress of TimeSpan * float * HorizontalProgressBar
+    | DisplayMenu of Button list
 
 type TeamMemberMsg =
     { TeamMember: StoryShared.TeamMember; Message: BattleMsg  }
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
-    let startMsgs = Seq.map (fun tm -> { TeamMember = tm; Message = StartWaiting }) storyState.CompanionsRecruited
+    let startMsgs = Seq.map (fun tm -> { TeamMember = tm; Message = StartWaiting (HorizontalProgressBar(Width=100)) }) storyState.CompanionsRecruited
     let queue = System.Collections.Generic.Queue<TeamMemberMsg>(startMsgs)
 
     let winBattle () =
@@ -23,34 +29,48 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         | Some newState -> updateScreenFn.Invoke(OpenGameScreen newState)
         | None -> ()
 
-    let teamState =
+    let teamPanel, teamMap =
         storyState.CompanionsRecruited
-        |> Seq.map(fun teamMember -> 
-            teamMember,
-            HorizontalProgressBar(Width=100))
-        |> dict
+        |> Seq.fold (fun ((fullPanel: StackPanel), (tmMap: Map<StoryShared.TeamMember, StackPanel>)) tm ->
+            let fullCharPanel = VerticalStackPanel()
+            fullPanel.Widgets.Add(fullCharPanel)
+            let label = Label(Text = tm.ToString())
+            do fullCharPanel.Widgets.Add(label)
+            let charPanel = VerticalStackPanel()
+            do fullCharPanel.Widgets.Add(charPanel)
+            fullPanel, Map.add tm charPanel tmMap) (HorizontalStackPanel(), Map.empty)
 
-    let rec processQueue (time: GameTime) =
-        match queue.TryDequeue() with
-        | true, { TeamMember = tm; Message = StartWaiting } -> 
-            Some { TeamMember = tm; Message = DoProgress time.TotalGameTime }
-        | true, { TeamMember = tm; Message = DoProgress waitFrom } ->
-            let progress = (time.TotalGameTime - waitFrom) / TimeSpan.FromSeconds(10.0)
-            let progressBar = teamState.[tm] 
-            if (progressBar.Value < 100.0f) then
-                progressBar.Value <- (float32)(progress * 100.0)
-                Some { TeamMember = tm; Message = DoProgress waitFrom }
+    // TODO process all items in queue and return all new messages
+    let rec processQueue consumed (time: GameTime) =
+        let hasItem, item = queue.TryDequeue()
+        if (not hasItem) then
+            consumed, None
+        else
+        match item with
+        | { TeamMember = tm; Message = StartWaiting progressBar } ->
+            item::consumed, Some { TeamMember = tm; Message = DoProgress (time.TotalGameTime, 0.0, progressBar) }
+        | { TeamMember = tm; Message = DoProgress (waitFrom, progress, progressBar) } ->
+            if (progress < 100.0) then
+                let newProgress = (time.TotalGameTime - waitFrom) / TimeSpan.FromSeconds(10.0)
+                item::consumed, Some { TeamMember = tm; Message = DoProgress (waitFrom, newProgress, progressBar) }
             else
-                processQueue time
-        | false, _ -> None
+                processQueue consumed time
 
-    let teamPanel =
-        let panel = HorizontalStackPanel()
-        for teamMemberState in teamState do
-            let label = Label(Text = teamMemberState.Key.ToString())
-            panel.Widgets.Add(label)
-            panel.Widgets.Add(teamMemberState.Value)
-        panel
+        | { TeamMember = teamMember; Message = DisplayMenu buttons } ->
+            item::consumed, None
+
+    let updateUI message =
+        let { TeamMember = tm; Message = msg } = message
+        let charPanel = Map.find tm teamMap
+        match msg with
+        | StartWaiting progressBar ->
+            do charPanel.Widgets.Clear()
+            do charPanel.Widgets.Add(progressBar)
+        | DoProgress (_, progress, progressBar) ->
+            do progressBar.Value <- (float32)progress * 100.0f
+        | DisplayMenu buttons ->
+            do charPanel.Widgets.Clear()
+            do List.iter (fun button -> charPanel.Widgets.Add(button)) buttons
 
     let root =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
@@ -72,9 +92,11 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            let msg = processQueue gameTime
-            match msg with
-            | Some msg -> queue.Enqueue msg
+            let consumed, newMsg = processQueue [] gameTime
+            do List.iter updateUI consumed
+            match newMsg with
+            | Some newMsg -> 
+                do queue.Enqueue newMsg
             | None -> ()
 
         member this.OnRender () =
