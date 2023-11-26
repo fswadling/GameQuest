@@ -11,6 +11,10 @@ module CircuitBreaker =
         | Continue y -> Continue (f y)
         | Break y -> Break y
 
+    let mapBreak f = function
+        | Continue y -> Continue y
+        | Break y -> Break (f y)
+
     let retn x =
         Continue x
 
