@@ -10,22 +10,26 @@ open GameState
 
 type IActor =
     abstract member OnUpdate: gameTime: GameTime -> unit
-    abstract member GetPanel: unit -> StackPanel
+    abstract member GetPanel: unit -> VerticalStackPanel
+
+type BattleInteraction<'TInstant> = 
+    | Actor of IActor
+    | Instant of 'TInstant
 
 type ProgressBarActor (notifyComplete) =
     let progresBar = HorizontalProgressBar(Width=100)
-    let mutable startTime: GameTime option = None
+    let mutable startTime: TimeSpan option = None
     interface IActor with
         member this.OnUpdate gameTime =
             match startTime with
             | None ->
-                startTime <- Some gameTime
+                startTime <- Some gameTime.TotalGameTime
             | Some startTime ->
-                let progress = (gameTime.TotalGameTime - startTime.TotalGameTime) / TimeSpan.FromSeconds(10.0)
-                if (progress < 100.0) then
+                let progress = (gameTime.TotalGameTime - startTime) / TimeSpan.FromSeconds(10.0)
+                if (progress < 1.0) then
                     progresBar.Value <- (float32)progress * 100.0f
                 else
-                    notifyComplete gameTime
+                    notifyComplete gameTime.TotalGameTime
 
         member this.GetPanel () =
             let panel = VerticalStackPanel()
@@ -39,7 +43,7 @@ type TeamMemberAction =
     | Flee
 
 type TeamMemberActor (onActionChosen) =
-    let mutable gameTime = new GameTime()
+    let mutable gameTime = TimeSpan.Zero
     let panel = VerticalStackPanel()
     let attackButton = Button(Content = Label(Text = "Attack"))
     do attackButton.Click.Add(fun _ -> onActionChosen (Attack, gameTime))
@@ -56,15 +60,15 @@ type TeamMemberActor (onActionChosen) =
 
     interface IActor with
         member this.OnUpdate gt =
-            gameTime <- gt
+            gameTime <- gt.TotalGameTime
             ()
 
         member this.GetPanel () = 
             panel
 
 type TeamMemberOrchestrationEvent =
-   | ProgressBarComplete of GameTime
-   | ChosenAction of TeamMemberAction * GameTime
+   | ProgressBarComplete of TimeSpan
+   | ChosenAction of TeamMemberAction * TimeSpan
 
 type WholeTeamOrchestrationEvent = StoryShared.TeamMember * TeamMemberOrchestrationEvent
 
@@ -73,25 +77,46 @@ type BattleOrchestration = Orchestration<WholeTeamOrchestrationEvent, obj, (Stor
 let rec teamMemberOrchestration progressBarFactory teamMemberActorFactory = orchestration {
     let! progressCompleteTime = 
         raiseToOrchestrationWithActions
-            [ progressBarFactory () ]
+            [ Actor (progressBarFactory ()) ]
             (event (function | ProgressBarComplete gameTime -> Some gameTime | _ -> None))
             
     let! chosenAction, gameTime =
         raiseToOrchestrationWithActions
-            [ teamMemberActorFactory () ]
+            [ Actor (teamMemberActorFactory ()) ]
             (event (function | ChosenAction (action, time) -> Some (action, time) | _ -> None))
 
     return! teamMemberOrchestration progressBarFactory teamMemberActorFactory
 }
 
 let wholeTeamTeamMemberOrchestration progressBarFactory teamMemberActorFactory teamMember = 
-    event (function | Some (tm, e) when tm = teamMember -> Some (Some e) | _ -> None)
+    event (
+        function 
+            | Some (tm, e) when tm = teamMember -> Some (Some e) 
+            | Some _ -> None
+            | None -> Some None)
     |> compose (teamMemberOrchestration (progressBarFactory teamMember) (teamMemberActorFactory teamMember))
     |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y)))
 
 let rec wholeTeamOrchestration progressBarFactory teamMemberActorFactory =
     List.map (wholeTeamTeamMemberOrchestration progressBarFactory teamMemberActorFactory)
     >> List.fold combine empty
+
+type EnemyEvent = 
+    | ProgressBarComplete of TimeSpan
+    | Attack of StoryShared.TeamMember
+
+let rec enemyOrchestration progressBarFactory = orchestration {
+    let! progressCompleteTime = 
+        raiseToOrchestrationWithActions
+            [ Actor (progressBarFactory ()) ]
+            (event (function | ProgressBarComplete gameTime -> Some gameTime | _ -> None))
+
+    do! raiseToOrchestrationWithActions
+            [ Instant (Attack (StoryShared.TeamMember.You)) ]
+            (event (function | Attack tm -> Some () | _ -> None))
+
+    return! enemyOrchestration progressBarFactory
+}
 
 type BattleState (battle: BattleOrchestration) =
     let actors = 
@@ -101,7 +126,6 @@ type BattleState (battle: BattleOrchestration) =
             actions
             |> List.choose (function | Break actors -> Some actors | _ -> None)
             |> List.collect id
-            |> List.map (fun (teamMember, actor) -> teamMember, actor.GetPanel())
             |> Map
             |> System.Collections.Generic.Dictionary
         )
@@ -114,37 +138,47 @@ type BattleState (battle: BattleOrchestration) =
         Option.map (fun next -> BattleState (next)) next
 
     member this.OnUpdate gameTime =
-        for (teamMember, actor: IActor) in actors.Value
+        for (actor: IActor) in actors.Value.Values
             do actor.OnUpdate(gameTime)
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleState option = None
+    let mutable teamPanels: System.Collections.Generic.Dictionary<_, _> option = None
 
-    let teamPanel, teamPanelDictionary = 
-        let panel = HorizontalStackPanel()
-        let teamMemberPanels = 
-            battleState 
-            |> Option.toList
-            |> List.collect (fun battle -> 
-                battle.TeamMemberActors
-                |> List.map (fun (_, actor) -> actor.GetPanel()))
-
-        for tmPanel in teamMemberPanels do
-            panel.Widgets.Add(tmPanel)
-
-        panel
+    let getTeamPanel (battleState: BattleState) = 
+        battleState.TeamMemberActors
+        |> Seq.map (fun kvp -> kvp.Key, kvp.Value, VerticalStackPanel())
+        |> Seq.map (fun (tm, actor, panel) -> 
+                do panel.Widgets.Add(actor.GetPanel())
+                tm, panel)
+        |> dict
+        |> System.Collections.Generic.Dictionary
 
     let progressBarComplete teamMember gameTime =
-        do Option.iter (
-            fun (battle: BattleState) -> 
-                battleState <- battle.DoEvent(teamMember, ProgressBarComplete(gameTime))) 
-                battleState
+        let newBattleState = 
+            Option.bind (fun (x: BattleState) -> x.DoEvent(teamMember, TeamMemberOrchestrationEvent.ProgressBarComplete(gameTime))) battleState
+
+        match newBattleState, teamPanels with
+        | Some newBattleState, Some teamPanels ->
+            let panel: VerticalStackPanel = teamPanels.[teamMember]
+            do panel.Widgets.Clear()
+            do panel.Widgets.Add(newBattleState.TeamMemberActors.[teamMember].GetPanel())
+        | _ -> ()
+
+        do battleState <- newBattleState
 
     let actionChosen teamMember (action, gameTime) =
-        do Option.iter (
-            fun (battle: BattleState) -> 
-                battleState <- battle.DoEvent(teamMember, ChosenAction(action, gameTime)))
-                battleState
+        let newBattleState = 
+            Option.bind (fun (x: BattleState) -> x.DoEvent(teamMember, ChosenAction(action, gameTime))) battleState
+
+        match newBattleState, teamPanels with
+        | Some newBattleState, Some teamPanels ->
+            let panel: VerticalStackPanel = teamPanels.[teamMember]
+            do panel.Widgets.Clear()
+            do panel.Widgets.Add(newBattleState.TeamMemberActors.[teamMember].GetPanel())
+        | _ -> ()
+
+        do battleState <- newBattleState
 
     let progressBarActorFactory teamMember () = 
         new ProgressBarActor(progressBarComplete teamMember)
@@ -166,15 +200,22 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         | Some newState -> updateScreenFn.Invoke(OpenGameScreen newState)
         | None -> ()
 
-    let root =
+    let getRoot (teamPanels: System.Collections.Generic.Dictionary<_,_>) =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = VerticalStackPanel()
         let winButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Win");
         let winButton = Button(Content = winButtonLabel)
+        let teamStack = HorizontalStackPanel(VerticalAlignment = VerticalAlignment.Center)
+
+        for kvp in teamPanels do
+            let memberPanel = VerticalStackPanel()
+            do memberPanel.Widgets.Add(Label(Text = kvp.Key.ToString()))
+            do memberPanel.Widgets.Add(kvp.Value)
+            do teamStack.Widgets.Add(memberPanel)
 
         winButton.TouchDown.Add(fun _ -> winBattle ())
         stack.Widgets.Add(winButton);
-        stack.Widgets.Add(teamPanel);
+        stack.Widgets.Add(teamStack);
         panel.Widgets.Add(stack);
         panel
 
@@ -183,8 +224,11 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             ()
 
         member this.Initialise () =
-            do battleState <- Some (BattleState(battleOrchestration))
-            desktop.Root <- root
+            let bs = BattleState(battleOrchestration)
+            let panels = getTeamPanel bs
+            do battleState <- Some bs
+            do teamPanels <- Some (panels)
+            desktop.Root <- getRoot panels
 
         member this.OnUpdate gameTime =
             do Option.iter (fun (battle: BattleState) -> battle.OnUpdate(gameTime)) battleState
