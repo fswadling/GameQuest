@@ -137,6 +137,10 @@ type FullBattleState =
         { TeamMemberStates = List.map (fun tm -> (tm, 100)) teamMembers
           EnemyState = 100 }
 
+    member this.IsBattleOver = 
+        this.TeamMemberStates |> List.forall (fun (_, hp) -> hp <= 0)
+        || this.EnemyState <= 0
+
 type FullBattleInteractive<'a> =
     | TeamMemberInteraction of StoryShared.TeamMember * BattleInteraction<'a>
     | EnemyInteraction of BattleInteraction<'a>
@@ -172,22 +176,30 @@ let updateState fullstate = function
         { fullstate with TeamMemberStates = teamMemberStates }
     | _ -> fullstate
 
-let fullBattleOrchestration tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMembers = 
+let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory = 
+    let teamMembers = initialState.TeamMemberStates |> List.map fst
     event Some
-    |> scan (stateAccumulator updateState) ({ Event = None; State = FullBattleState.Init teamMembers })
+    |> scan (stateAccumulator updateState) ({ Event = None; State = initialState })
     |> skip 1
-    |> compose (
-        (event (function | { Utilities.Event = e } -> Some e ))
-        |> compose (fullBattleOrc tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMembers))
+    |> compose 
+        (combine
+            (event Some
+                |> map (fun { Utilities.Event = e } -> e)
+                |> compose (fullBattleOrc tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMembers))
+            (event (function | { Utilities.State = state; Utilities.Event = Some _ } -> Some state | _ -> None)
+                |> map (CircuitBreaker.retn)))
 
-type BattleOrchestration = Orchestration<BattleEvent, obj, FullBattleInteractive<BattleEvent>>
+type BattleOrchestration = Orchestration<BattleEvent, FullBattleState, FullBattleInteractive<BattleEvent>>
 
-type BattleState (battle: BattleOrchestration) =
+type BattleState (battle: BattleOrchestration, state, winBattle) =
+    let results = lazy (
+        let { CoordinationResult.Result = results } = battle None
+        results
+    )
+
     let interactives = 
         lazy (
-            let { CoordinationResult.Result = actions } = battle None
-
-            actions
+            results.Value
             |> List.choose (function | Break interactives -> Some interactives | _ -> None)
             |> List.collect id
         )
@@ -201,6 +213,9 @@ type BattleState (battle: BattleOrchestration) =
                     | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
             |> List.toArray
         )
+
+    member this.BattleState with get() =
+        state
 
     member this.AllEnemyInstants with get() =
         interactives.Value
@@ -217,8 +232,19 @@ type BattleState (battle: BattleOrchestration) =
         |> List.choose (function | TeamMemberInteraction (_, Instant action) -> Some action | _ -> None)
 
     member this.DoEvent (event: BattleEvent) =
-        let { Next = next } = battle (Some event)
-        let nextState = Option.map (fun next -> BattleState (next)) next
+        let { Result = result; Next = next } = battle (Some event)
+        let newState = 
+            result 
+            |> List.choose (function | Continue state -> Some state | _ -> None) 
+            |> List.head
+
+        if newState.IsBattleOver then
+            winBattle ()
+            None
+        else
+
+        let nextState = Option.map (fun x -> BattleState(x, newState, winBattle)) next
+
         let nextState = 
             match nextState with
             | None -> None
@@ -247,11 +273,26 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
     let getTeamPanel (battleState: BattleState) = 
         battleState.TeamMemberActors
         |> Seq.map (fun kvp -> kvp.Key, kvp.Value, VerticalStackPanel())
-        |> Seq.map (fun (tm, actor, panel) -> 
+        |> Seq.map (fun (tm, actor, panel) ->
+                let heathLabel = Label(Text="Health")
                 do panel.Widgets.Add(actor.GetPanel())
-                tm, panel)
+                tm, (panel, heathLabel))
         |> dict
         |> System.Collections.Generic.Dictionary
+
+    let updateTeamHealth () =
+        let tmStates =
+            battleState
+            |> Option.toList
+            |> List.collect (fun x -> x.BattleState.TeamMemberStates |> Seq.toList)
+
+        if (teamPanels.IsNone) then
+            ()
+        else
+
+        for (tm, health) in tmStates do
+            let healthLabel: Label = teamPanels.Value[tm] |> snd
+            do healthLabel.Text <- health.ToString()
 
     let tmProgressBarComplete teamMember gameTime =
         let e = TeamMemberEvent (teamMember, TeamMemberOrchestrationEvent.ProgressBarComplete(gameTime))
@@ -261,18 +302,20 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
         match newBattleState, teamPanels with
         | Some (newBattleState: BattleState), Some teamPanels ->
-            let panel: VerticalStackPanel = teamPanels.[teamMember]
+            let panel: VerticalStackPanel = teamPanels.[teamMember] |> fst
             do panel.Widgets.Clear()
             do panel.Widgets.Add(newBattleState.TeamMemberActors.[teamMember].GetPanel())
         | _ -> ()
 
         do battleState <- newBattleState
+        do updateTeamHealth ()
 
     let enemyProgressBarComplete gameTime =
         let e = EnemyEvent (EnemyEvent.ProgressBarComplete(gameTime))
         let newBattleState = Option.bind (fun (x: BattleState) -> x.DoEvent(e)) battleState
 
         do battleState <- newBattleState
+        do updateTeamHealth ()
 
     let tmActionChosen teamMember (action, gameTime) =
         let e = TeamMemberEvent (teamMember, TeamMemberOrchestrationEvent.ChosenAction(action, gameTime))
@@ -280,12 +323,13 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
         match newBattleState, teamPanels with
         | Some (newBattleState: BattleState), Some teamPanels ->
-            let panel: VerticalStackPanel = teamPanels.[teamMember]
+            let panel: VerticalStackPanel = teamPanels.[teamMember] |> fst
             do panel.Widgets.Clear()
             do panel.Widgets.Add(newBattleState.TeamMemberActors.[teamMember].GetPanel())
         | _ -> ()
 
         do battleState <- newBattleState
+        do updateTeamHealth ()
 
     let progressBarActorFactory teamMember () = 
         new ProgressBarActor(tmProgressBarComplete teamMember)
@@ -301,10 +345,10 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
     let battleOrchestration = 
         fullBattleOrchestration
+            (FullBattleState.Init (storyState.CompanionsRecruited |> Set.toList))
             progressBarActorFactory
             enemyProgressBarActorFactory
             teamMemberActorFactory
-            (Seq.toList storyState.CompanionsRecruited)
 
     let winBattle () =
         let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
@@ -320,9 +364,11 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         let teamStack = HorizontalStackPanel(VerticalAlignment = VerticalAlignment.Center)
 
         for kvp in teamPanels do
+            let (actorWidget, healthLabel) = kvp.Value
             let memberPanel = VerticalStackPanel()
             do memberPanel.Widgets.Add(Label(Text = kvp.Key.ToString()))
-            do memberPanel.Widgets.Add(kvp.Value)
+            do memberPanel.Widgets.Add(healthLabel)
+            do memberPanel.Widgets.Add(actorWidget)
             do teamStack.Widgets.Add(memberPanel)
 
         winButton.TouchDown.Add(fun _ -> winBattle ())
@@ -336,11 +382,13 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             ()
 
         member this.Initialise () =
-            let bs = BattleState(battleOrchestration)
+            let state = FullBattleState.Init (storyState.CompanionsRecruited |> Set.toList)
+            let bs = BattleState(battleOrchestration, state, winBattle)
             let panels = getTeamPanel bs
             do battleState <- Some bs
-            do teamPanels <- Some (panels)
+            do teamPanels <- Some panels
             desktop.Root <- getRoot panels
+            do updateTeamHealth ()
 
         member this.OnUpdate gameTime =
             do Option.iter (fun (battle: BattleState) -> battle.OnUpdate(gameTime)) battleState
