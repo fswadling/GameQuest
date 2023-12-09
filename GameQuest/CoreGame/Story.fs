@@ -13,7 +13,7 @@ open LaraStory
 type StoryEvent = 
     | AdventureBegins
     | CalamityOccurs
-    | BattleWon
+    | BattleOver
     | AriaEvent of AriaInternalEvent
     | KaiEvent of KaiInternalEvent
     | LaraEvent of LaraInternalEvent
@@ -186,7 +186,7 @@ let mainQuest =
 
         do! raiseToOrchestrationWithActions
                 [ Battle state]
-                (event (function | { Event = StoryEvent.BattleWon } -> Some () | _ -> None))
+                (event (function | { Event = StoryEvent.BattleOver } -> Some () | _ -> None))
 
         yield aria
         yield kai
@@ -203,7 +203,7 @@ let mainQuest =
 
         do! raiseToOrchestrationWithActions
                 [ Battle state]
-                (event (function | { Event = StoryEvent.BattleWon } -> Some () | _ -> None))
+                (event (function | { Event = StoryEvent.BattleOver } -> Some () | _ -> None))
 
         do! raiseToOrchestrationWithActions
                 [ Exposition (Exposition.AdventureEnds, Some TheEnd) ]

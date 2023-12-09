@@ -30,7 +30,7 @@ type ProgressBarActor (notifyComplete) =
             | None ->
                 startTime <- Some gameTime.TotalGameTime
             | Some startTime ->
-                let progress = (gameTime.TotalGameTime - startTime) / TimeSpan.FromSeconds(10.0)
+                let progress = (gameTime.TotalGameTime - startTime) / TimeSpan.FromSeconds(2.0)
                 if (progress < 1.0) then
                     progresBar.Value <- (float32)progress * 100.0f
                 else
@@ -128,6 +128,10 @@ type BattleEvent =
 type TeamMemberState = StoryShared.TeamMember * int
 type EnemyState = int
 
+type BattleOverState =
+    | Victory
+    | Defeat
+
 type FullBattleState =
     { TeamMemberStates: TeamMemberState list
       EnemyState: EnemyState }
@@ -136,9 +140,13 @@ type FullBattleState =
         { TeamMemberStates = List.map (fun tm -> (tm, 100)) teamMembers
           EnemyState = 100 }
 
-    member this.IsBattleOver = 
-        this.TeamMemberStates |> List.forall (fun (_, hp) -> hp <= 0)
-        || this.EnemyState <= 0
+    member this.BattleOverState = 
+        if (this.TeamMemberStates |> List.forall (fun (_, hp) -> hp <= 0)) then
+            Some Defeat
+        else if (this.EnemyState <= 0) then
+            Some Victory
+        else
+            None
 
 type FullBattleInteractive<'a> =
     | TeamMemberInteraction of StoryShared.TeamMember * BattleInteraction<'a>
@@ -190,7 +198,7 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
 
 type BattleOrchestration = Orchestration<BattleEvent, FullBattleState, FullBattleInteractive<BattleEvent>>
 
-type BattleState (battle: BattleOrchestration, state, winBattle) =
+type BattleState (battle: BattleOrchestration, state, winBattle, loseBattle) =
     let results = lazy (
         let { CoordinationResult.Result = results } = battle None
         results
@@ -242,12 +250,14 @@ type BattleState (battle: BattleOrchestration, state, winBattle) =
             |> List.choose (function | Continue state -> Some state | _ -> None) 
             |> List.head
 
-        if newState.IsBattleOver then
-            winBattle ()
+        if newState.BattleOverState.IsSome then
+            match newState.BattleOverState.Value with
+            | Victory -> winBattle ()
+            | Defeat -> loseBattle ()
             None
         else
 
-        let nextState = Option.map (fun x -> BattleState(x, newState, winBattle)) next
+        let nextState = Option.map (fun x -> BattleState(x, newState, winBattle, loseBattle)) next
 
         let nextState = 
             match nextState with
@@ -303,16 +313,21 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
     let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, Beligerant>()
     let mutable (enemy: Beligerant option) = None
 
-    let updateTeamHealth () =
-        let tmStates =
-            battleState
-            |> Option.toList
-            |> List.collect (fun x -> x.BattleState.TeamMemberStates |> Seq.toList)
+    let updateHealth 
+        (enemyBeligerant: Beligerant) 
+        (team: System.Collections.Generic.Dictionary<StoryShared.TeamMember, Beligerant>)
+        (battleState: BattleState) =
+
+        let tmStates = battleState.BattleState.TeamMemberStates
 
         for (tm, health) in tmStates do
             let exists, beligerant = team.TryGetValue(tm)
             if exists then
                 do beligerant.UpdateHealth(health)
+
+        let enemyHealth = battleState.BattleState.EnemyState
+
+        do enemyBeligerant.UpdateHealth(enemyHealth)
 
     let tmProgressBarComplete teamMember gameTime =
         let e = TeamMemberEvent (teamMember, TeamMemberOrchestrationEvent.ProgressBarComplete(gameTime))
@@ -328,7 +343,8 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         let teamMemberActor = newBattleState.Value.TeamMemberActors.[teamMember]
         do beligerant.UpdateActorPanel(teamMemberActor)
         do battleState <- newBattleState
-        do updateTeamHealth ()
+        do updateHealth enemy.Value team newBattleState.Value
+
 
     let enemyProgressBarComplete gameTime =
         let e = EnemyEvent (EnemyEvent.ProgressBarComplete(gameTime))
@@ -340,9 +356,8 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
         let enemyActor = newBattleState.Value.EnemyActor.Value
         do enemy.Value.UpdateActorPanel(enemyActor)
-
         do battleState <- newBattleState
-        do updateTeamHealth ()
+        do updateHealth enemy.Value team newBattleState.Value
 
     let tmActionChosen teamMember (action, gameTime) =
         let e = TeamMemberEvent (teamMember, TeamMemberOrchestrationEvent.ChosenAction(action, gameTime))
@@ -355,9 +370,8 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         let beligerant = team.[teamMember]
         let teamMemberActor = newBattleState.Value.TeamMemberActors.[teamMember]
         do beligerant.UpdateActorPanel(teamMemberActor)
-
         do battleState <- newBattleState
-        do updateTeamHealth ()
+        do updateHealth enemy.Value team newBattleState.Value
 
     let progressBarActorFactory teamMember () = 
         new ProgressBarActor(tmProgressBarComplete teamMember)
@@ -379,10 +393,13 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             teamMemberActorFactory
 
     let winBattle () =
-        let newState = gameState.DoEvent (Story.StoryEvent.BattleWon)
+        let newState = gameState.DoEvent (Story.StoryEvent.BattleOver)
         match newState with
         | Some newState -> updateScreenFn.Invoke(OpenGameScreen newState)
         | None -> ()
+
+    let loseBattle () = 
+         do updateScreenFn.Invoke(OpenGameOverScreen gameState)
 
     let getRoot () =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
@@ -412,12 +429,12 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
         member this.Initialise () =
             let state = FullBattleState.Init (storyState.CompanionsRecruited |> Set.toList)
-            let bs = BattleState(battleOrchestration, state, winBattle)
+            let bs = BattleState(battleOrchestration, state, winBattle, loseBattle)
             do battleState <- Some bs
             do team <- Beligerant.GetTeamBeligerants bs
             do enemy <- Beligerant.GetEnemyBeligerant bs
             do desktop.Root <- getRoot ()
-            do updateTeamHealth ()
+            do updateHealth enemy.Value team bs
 
         member this.OnUpdate gameTime =
             do Option.iter (fun (battle: BattleState) -> battle.OnUpdate(gameTime)) battleState

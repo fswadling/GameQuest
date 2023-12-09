@@ -22,6 +22,7 @@ type ScreenJourneyEvent =
     | OpenGameScreen of GameState
     | OpenMenuScreen of GameState
     | OpenBattleScreen of Story.State * GameState
+    | OpenGameOverScreen of GameState
 
 [<AllowNullLiteral>]
 type IScreen =
@@ -235,6 +236,28 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
 
         member this.OnUpdate gameTime =
             escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
+
+        member this.OnRender () =
+            desktop.Render()
+
+type GameOverScreen (desktop: Desktop) =
+    let root =
+        let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
+        let stack = VerticalStackPanel()
+        let textLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Game Over");
+        stack.Widgets.Add(textLabel);
+        panel.Widgets.Add(stack);
+        panel
+
+    interface IScreen with
+        member this.Dispose(): unit = 
+            ()
+
+        member this.Initialise () =
+            desktop.Root <- root
+
+        member this.OnUpdate gameTime =
+            ()
 
         member this.OnRender () =
             desktop.Render()

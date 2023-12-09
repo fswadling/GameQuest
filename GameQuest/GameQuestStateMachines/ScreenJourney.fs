@@ -15,17 +15,29 @@ let rec mainLoop desktop updateFn gameState = orchestration {
             | _ -> None)
         |> raiseToOrchestrationWithActions [new Screens.GameScreen(desktop, updateFn, gameState) :> IScreen]
 
-    let! gameState =
+    let! gameState, isGameOver =
         match screenEvent with
         | OpenMenuScreen gameState ->
-            event (function | OpenGameScreen state -> Some state | _ -> None)
+            event (function | OpenGameScreen state -> Some (state, false) | _ -> None)
             |> raiseToOrchestrationWithActions [new Screens.MenuScreen(desktop, updateFn, gameState, Story.story) :> IScreen]
         | OpenBattleScreen (battleState, gameState) ->
-            event (function | OpenGameScreen state -> Some state | _ -> None)
+            event (
+                function 
+                    | OpenGameScreen state -> Some (state, false)
+                    | OpenGameOverScreen state -> Some (state, true)
+                    | _ -> None)
             |> raiseToOrchestrationWithActions [new BattleScreen(desktop, updateFn, battleState, gameState) :> IScreen]
         | _ -> failwith "Unexpected screen event"
 
-    return! mainLoop desktop updateFn gameState
+    return!
+        if isGameOver then 
+            orchestration {
+                do! event (function | _ -> None)
+                    |> raiseToOrchestrationWithActions [new Screens.GameOverScreen(desktop) :> IScreen]
+
+                return! mainLoop desktop updateFn gameState
+            }
+        else mainLoop desktop updateFn gameState
 }
 
 let ScreenJouney updateFn = 
