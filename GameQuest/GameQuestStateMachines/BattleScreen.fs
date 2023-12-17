@@ -143,6 +143,17 @@ type FullBattleState =
         else
             None
 
+    member this.IsTeamMemberAlive tm =
+        this.TeamMemberStates |> List.exists (fun (tm2, hp) -> tm = tm2 && hp > 0)
+
+
+let (|AliveTeamMemberEvent|_|) = function
+    | { Utilities.Event = TeamMemberEvent ((tm, _) as tme); Utilities.State = (state: FullBattleState) }
+        when state.IsTeamMemberAlive tm ->
+        Some tme
+    | _ -> None
+
+
 type FullBattleInteractive<'a> =
     | TeamMemberInteraction of StoryShared.TeamMember * BattleInteraction<'a>
     | EnemyInteraction of BattleInteraction<'a>
@@ -154,14 +165,23 @@ let raisedEnemyOrchestration enemyProgressBarFactory =
         |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
 
 let raisedWholeTeamOrchestration tmProgressBarFactory teamMemberActorFactory teamMembers =
-    event (function | None -> Some None | Some (TeamMemberEvent tme) -> Some (Some tme) | _ -> None)
+    event 
+        (function 
+            | None -> Some None 
+            | Some (AliveTeamMemberEvent tme)
+                -> Some (Some tme) 
+            | _ -> None)
     |> compose (
         (wholeTeamOrchestration tmProgressBarFactory teamMemberActorFactory teamMembers) 
         |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction)))
 
 let fullBattleOrc tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMembers = 
-    raisedEnemyOrchestration enemyProgressBarFactory
-    |> combine (raisedWholeTeamOrchestration tmProgressBarFactory teamMemberActorFactory teamMembers)
+    combine
+        (raisedWholeTeamOrchestration tmProgressBarFactory teamMemberActorFactory teamMembers)
+        (event Some
+            |> map (fun { Utilities.Event = e } -> e)
+            |> compose (raisedEnemyOrchestration enemyProgressBarFactory))
+        
 
 let private stateAccumulator updateState (eventAndState: Utilities.EventAndState<_,_>) = function
     | Some e -> { Utilities.State = updateState eventAndState.State e; Utilities.Event = Some e }
