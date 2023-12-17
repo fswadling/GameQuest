@@ -43,8 +43,7 @@ type ProgressBarActor (notifyComplete) =
 
 type TeamMemberAction =
     | Attack
-    | Defend
-    | UseItem
+    | UsePotion
     | Flee
 
 type TeamMemberActor (onActionChosen) =
@@ -52,16 +51,11 @@ type TeamMemberActor (onActionChosen) =
     let panel = VerticalStackPanel()
     let attackButton = Button(Content = Label(Text = "Attack"))
     do attackButton.Click.Add(fun _ -> onActionChosen (Attack, gameTime))
-    let defendButton = Button(Content = Label(Text = "Defend"))
-    do defendButton.Click.Add(fun _ -> onActionChosen (Defend, gameTime))
-    let useItemButton = Button(Content = Label(Text = "Use Item"))
-    do useItemButton.Click.Add(fun _ -> onActionChosen (UseItem, gameTime))
-    let fleeButton = Button(Content = Label(Text = "Flee"))
-    do fleeButton.Click.Add(fun _ -> onActionChosen (Flee, gameTime))
+    let usePotionButton = Button(Content = Label(Text = "Use Potion"))
+    do usePotionButton.Click.Add(fun _ -> onActionChosen (UsePotion, gameTime))
+   
     do panel.Widgets.Add(attackButton)
-    do panel.Widgets.Add(defendButton)
-    do panel.Widgets.Add(useItemButton)
-    do panel.Widgets.Add(fleeButton)
+    do panel.Widgets.Add(usePotionButton)
 
     interface IActor with
         member this.OnUpdate gt =
@@ -125,7 +119,8 @@ type BattleEvent =
     | TeamMemberEvent of WholeTeamOrchestrationEvent
     | EnemyEvent of EnemyEvent
 
-type TeamMemberState = StoryShared.TeamMember * int
+
+type TeamMemberAndState = StoryShared.TeamMember * int
 type EnemyState = int
 
 type BattleOverState =
@@ -133,7 +128,7 @@ type BattleOverState =
     | Defeat
 
 type FullBattleState =
-    { TeamMemberStates: TeamMemberState list
+    { TeamMemberStates: TeamMemberAndState list
       EnemyState: EnemyState }
 
     static member Init teamMembers = 
@@ -181,7 +176,13 @@ let updateState fullstate = function
             fullstate.TeamMemberStates
             |> List.map (fun (tm', health) -> if tm' = tm then (tm', health - 10) else (tm', health))
         { fullstate with TeamMemberStates = teamMemberStates }
-    | _ -> fullstate
+    | TeamMemberEvent (tm, ChosenAction (TeamMemberAction.UsePotion, _)) ->
+        { fullstate 
+            with TeamMemberStates = 
+                    fullstate.TeamMemberStates 
+                    |> List.map (fun (tm', health) -> if tm' = tm then (tm', 100) else (tm', health)) }
+    | _ -> 
+        fullstate
 
 let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory = 
     let teamMembers = initialState.TeamMemberStates |> List.map fst
