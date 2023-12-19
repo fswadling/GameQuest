@@ -183,7 +183,7 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
     |> scan (stateAccumulator updateState) ({ Event = None; State = initialState })
     |> skip 1
     |> compose 
-        (event (chooseOrchestrationEventAndStates (function | TeamMemberEvent (tm, e) -> Some (tm, e) | _ -> None))
+        ((event (chooseOrchestrationEventAndStates (function | TeamMemberEvent (tm, e) -> Some (tm, e) | _ -> None))
         |> compose (
              teamMembers
              |> List.map (
@@ -195,19 +195,19 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
                     |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y))))
              |> List.fold combine empty)
         |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction))
-    |> combine
-        (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
-        |> compose (enemyOrchestration enemyProgressBarFactory)
-        |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
-    |> combine
-        (event chooseStateOnGetNextStep
-        |> map (fun (state: FullBattleState) -> 
-            state.DeadTeamMembers
-            |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
-            |> Break))
-    |> combine
-        (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
-        |> map (CircuitBreaker.retn)))
+        |> combine
+            (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
+            |> compose (enemyOrchestration enemyProgressBarFactory)
+            |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
+        |> combine
+            (event chooseStateOnGetNextStep
+            |> map (fun (state: FullBattleState) -> 
+                state.DeadTeamMembers
+                |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
+                |> Break))
+        |> combine
+            (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
+            |> map (CircuitBreaker.retn))))
 
 type BattleOrchestration = Orchestration<BattleEvent, FullBattleState, FullBattleInteractive<BattleEvent>>
 
