@@ -2,14 +2,7 @@
 
 open OrchestrationCE
 open Coordination
-
-type EventAndState<'TState, 'TEvent> = 
-    { Event : 'TEvent
-      State : 'TState }
-
-let private stateAccumulator updateState eventAndState = function
-    | Some e -> { State = updateState eventAndState.State e; Event = Some e }
-    | None -> { State = eventAndState.State; Event = None }
+open EventAndState
 
 let baseStoryWithState updateState initState =
     event Some

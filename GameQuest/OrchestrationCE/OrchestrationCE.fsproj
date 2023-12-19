@@ -9,7 +9,7 @@
     <Compile Include="Coordination.fs" />
     <Compile Include="GenericOrchestration.fs" />
     <Compile Include="Orchestration.fs" />
-	<Compile Include="CancellableOrchestration.fs" />
+	<Compile Include="EventAndState.fs" />
   </ItemGroup>
 
   <ItemGroup>

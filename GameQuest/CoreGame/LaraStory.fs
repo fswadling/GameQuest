@@ -2,6 +2,7 @@
 
 open OrchestrationCE.Coordination
 open OrchestrationCE.Orchestration
+open OrchestrationCE.EventAndState
 open Utilities
 open StoryShared
 
