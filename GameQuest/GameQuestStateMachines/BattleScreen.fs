@@ -45,7 +45,6 @@ type ProgressBarActor (notifyComplete) =
 type TeamMemberAction =
     | Attack
     | UsePotion
-    | Flee
 
 type TeamMemberActor (onActionChosen) =
     let mutable gameTime = TimeSpan.Zero
