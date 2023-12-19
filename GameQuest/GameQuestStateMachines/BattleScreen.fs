@@ -38,7 +38,7 @@ type BattleEvent =
     | TeamMemberEvent of StoryShared.TeamMember * TeamMemberEvent
     | EnemyEvent of EnemyEvent
 
-type TeamMemberAndState = StoryShared.TeamMember * int
+type TeamMemberState = int
 type EnemyState = int
 
 type BattleOverState =
@@ -123,15 +123,15 @@ let rec enemyOrchestration progressBarFactory = orchestration {
 }
 
 type FullBattleState =
-    { TeamMemberStates: TeamMemberAndState list
+    { TeamMemberStates: Map<StoryShared.TeamMember, TeamMemberState>
       EnemyState: EnemyState }
 
     static member Init teamMembers = 
-        { TeamMemberStates = List.map (fun tm -> (tm, 100)) teamMembers
+        { TeamMemberStates = teamMembers |> List.map (fun tm -> tm, 100) |> Map.ofList
           EnemyState = 100 }
 
     member this.BattleOverState = 
-        if (this.TeamMemberStates |> List.forall (fun (_, hp) -> hp <= 0)) then
+        if (this.TeamMemberStates |> Map.forall (fun _ hp -> hp <= 0)) then
             Some Defeat
         else if (this.EnemyState <= 0) then
             Some Victory
@@ -139,27 +139,27 @@ type FullBattleState =
             None
 
     member this.IsTeamMemberAlive tm =
-        this.TeamMemberStates |> List.exists (fun (tm2, hp) -> tm = tm2 && hp > 0)
+        this.TeamMemberStates |> Map.exists (fun tm2 hp -> tm = tm2 && hp > 0)
 
     member this.DeadTeamMembers =
-        this.TeamMemberStates |> List.filter (fun (_, hp) -> hp <= 0) |> List.map fst
+        this.TeamMemberStates |> Map.filter (fun _ hp -> hp <= 0) |> Map.keys |> List.ofSeq
 
     member this.ReduceTeamMemberHealth tm damage =
         let teamMemberStates = 
             this.TeamMemberStates
-            |> List.map (fun (tm', health) -> 
+            |> Map.map (fun tm' health -> 
                 if tm' = tm 
-                then (tm', Math.Max(health - damage, 0)) 
-                else (tm', health))
+                then Math.Max(health - damage, 0)
+                else health)
         { this with TeamMemberStates = teamMemberStates }
 
     member this.HealTeamMember tm =
         let teamMemberStates = 
             this.TeamMemberStates
-            |> List.map (fun (tm', health) -> 
+            |> Map.map (fun tm' health -> 
                 if tm' = tm 
-                then (tm', Math.Min(health + 50, 100)) 
-                else (tm', health))
+                then Math.Min(health + 50, 100)
+                else health)
         { this with TeamMemberStates = teamMemberStates }
 
 type FullBattleInteractive<'a> =
@@ -178,7 +178,7 @@ let updateState fullstate = function
         fullstate
 
 let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMemberDeadActorFactory = 
-    let teamMembers = initialState.TeamMemberStates |> List.map fst
+    let teamMembers = initialState.TeamMemberStates |> Map.keys |> List.ofSeq
     event Some
     |> scan (stateAccumulator updateState) ({ Event = None; State = initialState })
     |> skip 1
@@ -195,20 +195,19 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
                     |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y))))
              |> List.fold combine empty)
         |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction))
-        |> combine
-            (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
-                |> compose (enemyOrchestration enemyProgressBarFactory)
-                |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
-        |> combine
-            (event chooseStateOnGetNextStep
-                |> map (fun (state: FullBattleState) -> 
-                    state.DeadTeamMembers 
-                    |> List.map (fun tm -> tm, (Actor (teamMemberDeadActorFactory ()))))
-                |> map (List.map TeamMemberInteraction)
-                |> map Break)
-        |> combine
-            (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
-            |> map (CircuitBreaker.retn)))
+    |> combine
+        (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
+        |> compose (enemyOrchestration enemyProgressBarFactory)
+        |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
+    |> combine
+        (event chooseStateOnGetNextStep
+        |> map (fun (state: FullBattleState) -> 
+            state.DeadTeamMembers
+            |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
+            |> Break))
+    |> combine
+        (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
+        |> map (CircuitBreaker.retn)))
 
 type BattleOrchestration = Orchestration<BattleEvent, FullBattleState, FullBattleInteractive<BattleEvent>>
 
@@ -294,6 +293,7 @@ type BattleState (battle: BattleOrchestration, state, winBattle, loseBattle) =
         for (actor: IActor) in allActors.Value
             do actor.OnUpdate(gameTime)
 
+[<AllowNullLiteral>]
 type Beligerant (name: string, actor: IActor) =
     let memberPanel = VerticalStackPanel()
     do memberPanel.Widgets.Add(Label(Text = name))
@@ -325,72 +325,45 @@ type Beligerant (name: string, actor: IActor) =
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleState option = None
     let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, Beligerant>()
-    let mutable (enemy: Beligerant option) = None
+    let mutable enemy: Beligerant = null
 
-    let updateHealth 
-        (enemyBeligerant: Beligerant) 
-        (team: System.Collections.Generic.Dictionary<StoryShared.TeamMember, Beligerant>)
-        (battleState: BattleState) =
+    let updateBeligerants () =
+        let tmActors = battleState.Value.TeamMemberActors
+        let tmState = battleState.Value.BattleState.TeamMemberStates
 
-        let tmStates = battleState.BattleState.TeamMemberStates
+        for kvp in team do
+            let beligerant = kvp.Value
+            let actor = tmActors[kvp.Key]
+            do beligerant.UpdateActorPanel(actor)
+            let tmState = tmState.TryFind kvp.Key
+            do beligerant.UpdateHealth tmState.Value
 
-        for (tm, health) in tmStates do
-            let exists, beligerant = team.TryGetValue(tm)
-            if exists then
-                do beligerant.UpdateHealth(health)
+        let enemyActor = battleState.Value.EnemyActor
+        do enemy.UpdateActorPanel(enemyActor.Value);
+        do enemy.UpdateHealth(battleState.Value.BattleState.EnemyState)
 
-        let enemyHealth = battleState.BattleState.EnemyState
+    let applyEventAndUpdate event =
+        let newBattleState = 
+            Option.bind (fun (x: BattleState) -> x.DoEvent(event)) battleState
 
-        do enemyBeligerant.UpdateHealth(enemyHealth)
+        if newBattleState.IsNone then
+            ()
+        else
+
+        battleState <- newBattleState
+        updateBeligerants()
 
     let tmProgressBarComplete teamMember gameTime =
-        let e = TeamMemberEvent (teamMember, TeamMemberEvent.ProgressBarComplete(gameTime))
-
-        let newBattleState = 
-            Option.bind (fun (x: BattleState) -> x.DoEvent(e)) battleState
-
-        if newBattleState.IsNone then
-            ()
-        else
-
-        let beligerant = team.[teamMember]
-        let teamMemberActor = newBattleState.Value.TeamMemberActors.[teamMember]
-        do beligerant.UpdateActorPanel(teamMemberActor)
-        do battleState <- newBattleState
-        do updateHealth enemy.Value team newBattleState.Value
-
+        do TeamMemberEvent (teamMember, TeamMemberEvent.ProgressBarComplete(gameTime))
+           |> applyEventAndUpdate
 
     let enemyProgressBarComplete gameTime =
-        let e = EnemyEvent (EnemyEvent.EnemyProgressBarComplete(gameTime))
-        let newBattleState = Option.bind (fun (x: BattleState) -> x.DoEvent(e)) battleState
-
-        if newBattleState.IsNone then
-            ()
-        else
-
-        let enemyActor = newBattleState.Value.EnemyActor.Value
-        do enemy.Value.UpdateActorPanel(enemyActor)
-
-        for kvp in newBattleState.Value.TeamMemberActors do
-            let beligerant = team.[kvp.Key]
-            do beligerant.UpdateActorPanel(kvp.Value)
-
-        do battleState <- newBattleState
-        do updateHealth enemy.Value team newBattleState.Value
+        do EnemyEvent (EnemyEvent.EnemyProgressBarComplete(gameTime))
+           |> applyEventAndUpdate
 
     let tmActionChosen teamMember (action, gameTime) =
-        let e = TeamMemberEvent (teamMember, TeamMemberEvent.ChosenAction(action, gameTime))
-        let newBattleState = Option.bind (fun (x: BattleState) -> x.DoEvent(e)) battleState
-
-        if newBattleState.IsNone then
-            ()
-        else
-
-        let beligerant = team.[teamMember]
-        let teamMemberActor = newBattleState.Value.TeamMemberActors.[teamMember]
-        do beligerant.UpdateActorPanel(teamMemberActor)
-        do battleState <- newBattleState
-        do updateHealth enemy.Value team newBattleState.Value
+        do TeamMemberEvent (teamMember, TeamMemberEvent.ChosenAction(action, gameTime))
+            |> applyEventAndUpdate
 
     let progressBarActorFactory teamMember () = 
         new ProgressBarActor(tmProgressBarComplete teamMember)
@@ -436,9 +409,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             do teamStack.Widgets.Add(kvp.Value.MemberPanel)
 
         let enemyStack = HorizontalStackPanel(VerticalAlignment = VerticalAlignment.Center)
-
-        for enemy: Beligerant in enemy |> Option.toList do
-            do enemyStack.Widgets.Add(enemy.MemberPanel)
+        do enemyStack.Widgets.Add(enemy.MemberPanel)
 
         winButton.TouchDown.Add(fun _ -> winBattle ())
         stack.Widgets.Add(winButton);
@@ -456,9 +427,9 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             let bs = BattleState(battleOrchestration, state, winBattle, loseBattle)
             do battleState <- Some bs
             do team <- Beligerant.GetTeamBeligerants bs
-            do enemy <- Beligerant.GetEnemyBeligerant bs
+            do enemy <- (Beligerant.GetEnemyBeligerant bs).Value
             do desktop.Root <- getRoot ()
-            do updateHealth enemy.Value team bs
+            do updateBeligerants ()
 
         member this.OnUpdate gameTime =
             do Option.iter (fun (battle: BattleState) -> battle.OnUpdate(gameTime)) battleState

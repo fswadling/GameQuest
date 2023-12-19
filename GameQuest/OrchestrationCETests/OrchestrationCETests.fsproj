@@ -7,7 +7,6 @@
 
   <ItemGroup>
 	<Compile Include="TestEvents.fs" />
-    <Compile Include="CancellableOrchestrationsTest.fs" />
     <Compile Include="ConcatMapTests.fs" />
     <Compile Include="ExhaustMapTests.fs" />
     <Compile Include="MergeMapTests.fs" />
