@@ -184,27 +184,32 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
     |> skip 1
     |> compose 
         ((event (chooseOrchestrationEventAndStates (function | TeamMemberEvent (tm, e) -> Some (tm, e) | _ -> None))
+        // Combines the orchestrations for each alive team member
         |> compose (
              teamMembers
              |> List.map (
                  fun teamMember -> 
                     event (chooseOrchestrationEventAndStates (fun (tm, e) -> if tm = teamMember then Some e else None))
+                    // Only considering alive team members here
                     |> filter (fun { State = state: FullBattleState } -> state.IsTeamMemberAlive(teamMember))
                     |> choose (chooseOrchestrationEvents (Some))
                     |> compose (teamMemberOrchestration (tmProgressBarFactory teamMember) (teamMemberActorFactory teamMember))
                     |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y))))
-             |> List.fold combine empty)
-        |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction))
+             |> List.fold combine empty
+             |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction)))
+        // Adds the enemy orchestration
         |> combine
             (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
             |> compose (enemyOrchestration enemyProgressBarFactory)
             |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
+        // Any event can lead to a team member death, so handle that possibility here
         |> combine
             (event chooseStateOnGetNextStep
             |> map (fun (state: FullBattleState) -> 
                 state.DeadTeamMembers
                 |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
                 |> Break))
+        // Return the current state when applying an event
         |> combine
             (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
             |> map (CircuitBreaker.retn))))
