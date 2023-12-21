@@ -25,6 +25,12 @@ let chooseOrchestrationEventAndStates chooser = function
     | { Event = None; State = state } ->
         Some { Event = None; State = state }
 
+let raiseToOptionalEventAndState = function
+    | { Event = Some e; State = state } ->
+        Some { Event = e; State = state}
+    | { Event = None; State = state } ->
+        None
+
 let chooseStateOnGetNextStep = function
     | { Event = None; State = state } -> Some state
     | _ -> None

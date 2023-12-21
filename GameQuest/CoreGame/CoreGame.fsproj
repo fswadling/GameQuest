@@ -12,6 +12,7 @@
     <Compile Include="KaiStory.fs" />
     <Compile Include="LaraStory.fs" />
     <Compile Include="Story.fs" />
+	<Compile Include="BattleSystem.fs" />
   </ItemGroup>
 
   <ItemGroup>

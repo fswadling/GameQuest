@@ -5,45 +5,13 @@ open Myra.Graphics2D.UI
 open Microsoft.Xna.Framework
 open OrchestrationCE.Coordination
 open OrchestrationCE.Orchestration
-open OrchestrationCE.EventAndState
+open BattleSystem
 open Screens
 open GameState
 
 type IActor =
     abstract member OnUpdate: gameTime: GameTime -> unit
     abstract member GetPanel: unit -> VerticalStackPanel
-
-type BattleInteraction<'TInstant> = 
-    | Actor of IActor
-    | Instant of 'TInstant
-
-module BattleInteraction =
-    let mapInstant f = function
-        | Actor a -> Actor a
-        | Instant i -> Instant (f i)
-
-type TeamMemberAction =
-    | Attack
-    | UsePotion
-
-type TeamMemberEvent =
-   | ProgressBarComplete of TimeSpan
-   | ChosenAction of TeamMemberAction * TimeSpan
-
-type EnemyEvent = 
-    | EnemyProgressBarComplete of TimeSpan
-    | EnemyAttack of StoryShared.TeamMember
-
-type BattleEvent =
-    | TeamMemberEvent of StoryShared.TeamMember * TeamMemberEvent
-    | EnemyEvent of EnemyEvent
-
-type TeamMemberState = int
-type EnemyState = int
-
-type BattleOverState =
-    | Victory
-    | Defeat
 
 type ProgressBarActor (notifyComplete) =
     let progresBar = HorizontalProgressBar(Width=100)
@@ -95,128 +63,7 @@ type TeamMemberDeadActor () =
         member this.GetPanel () = 
             panel
 
-let rec teamMemberOrchestration progressBarFactory teamMemberActorFactory = orchestration {
-    let! progressCompleteTime = 
-        raiseToOrchestrationWithActions
-            [ Actor (progressBarFactory ()) ]
-            (event (function | TeamMemberEvent.ProgressBarComplete gameTime -> Some gameTime | _ -> None))
-            
-    let! chosenAction, gameTime =
-        raiseToOrchestrationWithActions
-            [ Actor (teamMemberActorFactory ()) ]
-            (event (function | ChosenAction (action, time) -> Some (action, time) | _ -> None))
-
-    return! teamMemberOrchestration progressBarFactory teamMemberActorFactory
-}
-
-let rec enemyOrchestration progressBarFactory = orchestration {
-    let! progressCompleteTime = 
-        raiseToOrchestrationWithActions
-            [ Actor (progressBarFactory ()) ]
-            (event (function | EnemyEvent.EnemyProgressBarComplete gameTime -> Some gameTime | _ -> None))
-
-    do! raiseToOrchestrationWithActions
-            [ Instant (EnemyAttack (StoryShared.TeamMember.You)) ]
-            (event (function | EnemyAttack tm -> Some () | _ -> None))
-
-    return! enemyOrchestration progressBarFactory
-}
-
-type FullBattleState =
-    { TeamMemberStates: Map<StoryShared.TeamMember, TeamMemberState>
-      EnemyState: EnemyState }
-
-    static member Init teamMembers = 
-        { TeamMemberStates = teamMembers |> List.map (fun tm -> tm, 100) |> Map.ofList
-          EnemyState = 100 }
-
-    member this.BattleOverState = 
-        if (this.TeamMemberStates |> Map.forall (fun _ hp -> hp <= 0)) then
-            Some Defeat
-        else if (this.EnemyState <= 0) then
-            Some Victory
-        else
-            None
-
-    member this.IsTeamMemberAlive tm =
-        this.TeamMemberStates |> Map.exists (fun tm2 hp -> tm = tm2 && hp > 0)
-
-    member this.DeadTeamMembers =
-        this.TeamMemberStates |> Map.filter (fun _ hp -> hp <= 0) |> Map.keys |> List.ofSeq
-
-    member this.ReduceTeamMemberHealth tm damage =
-        let teamMemberStates = 
-            this.TeamMemberStates
-            |> Map.map (fun tm' health -> 
-                if tm' = tm 
-                then Math.Max(health - damage, 0)
-                else health)
-        { this with TeamMemberStates = teamMemberStates }
-
-    member this.HealTeamMember tm =
-        let teamMemberStates = 
-            this.TeamMemberStates
-            |> Map.map (fun tm' health -> 
-                if tm' = tm 
-                then Math.Min(health + 50, 100)
-                else health)
-        { this with TeamMemberStates = teamMemberStates }
-
-type FullBattleInteractive<'a> =
-    | TeamMemberInteraction of StoryShared.TeamMember * BattleInteraction<'a>
-    | EnemyInteraction of BattleInteraction<'a>
-
-let updateState fullstate = function
-    | TeamMemberEvent (tm, ChosenAction (TeamMemberAction.Attack, _)) ->
-        let enemyState = fullstate.EnemyState - 10
-        { fullstate with EnemyState = enemyState }
-    | EnemyEvent (EnemyAttack tm) ->
-        fullstate.ReduceTeamMemberHealth tm 10
-    | TeamMemberEvent (tm, ChosenAction (TeamMemberAction.UsePotion, _)) ->
-        fullstate.HealTeamMember tm
-    | _ -> 
-        fullstate
-
-let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMemberDeadActorFactory = 
-    let teamMembers = initialState.TeamMemberStates |> Map.keys |> List.ofSeq
-    event Some
-    |> scan (stateAccumulator updateState) ({ Event = None; State = initialState })
-    |> skip 1
-    |> compose 
-        ((event (chooseOrchestrationEventAndStates (function | TeamMemberEvent (tm, e) -> Some (tm, e) | _ -> None))
-        // Combines the orchestrations for each alive team member
-        |> compose (
-             teamMembers
-             |> List.map (
-                 fun teamMember -> 
-                    event (chooseOrchestrationEventAndStates (fun (tm, e) -> if tm = teamMember then Some e else None))
-                    // Only considering alive team members here
-                    |> filter (fun { State = state: FullBattleState } -> state.IsTeamMemberAlive(teamMember))
-                    |> choose (chooseOrchestrationEvents (Some))
-                    |> compose (teamMemberOrchestration (tmProgressBarFactory teamMember) (teamMemberActorFactory teamMember))
-                    |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y))))
-             |> List.fold combine empty
-             |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction)))
-        // Adds the enemy orchestration
-        |> combine
-            (event (chooseOrchestrationEvents (function | EnemyEvent e -> Some e | _ -> None))
-            |> compose (enemyOrchestration enemyProgressBarFactory)
-            |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
-        // Any event can lead to a team member death, so handle that possibility here
-        |> combine
-            (event chooseStateOnGetNextStep
-            |> map (fun (state: FullBattleState) -> 
-                state.DeadTeamMembers
-                |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
-                |> Break))
-        // Return the current state when applying an event
-        |> combine
-            (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
-            |> map (CircuitBreaker.retn))))
-
-type BattleOrchestration = Orchestration<BattleEvent, FullBattleState, FullBattleInteractive<BattleEvent>>
-
-type BattleState (battle: BattleOrchestration, state, winBattle, loseBattle) =
+type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBattle) =
     let results = lazy (
         let { CoordinationResult.Result = results } = battle None
         results
@@ -257,10 +104,6 @@ type BattleState (battle: BattleOrchestration, state, winBattle, loseBattle) =
         |> List.choose (function | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
         |> List.tryLast
 
-    member this.InstantActions with get() =
-        interactives.Value
-        |> List.choose (function | TeamMemberInteraction (_, Instant action) -> Some action | _ -> None)
-
     member this.DoEvent (event: BattleEvent) =
         let { Result = result; Next = next } = battle (Some event)
         let newState = 
@@ -268,8 +111,10 @@ type BattleState (battle: BattleOrchestration, state, winBattle, loseBattle) =
             |> List.choose (function | Continue state -> Some state | _ -> None) 
             |> List.head
 
-        if newState.BattleOverState.IsSome then
-            match newState.BattleOverState.Value with
+        let battleOverState = BattleState.battleOverState newState
+
+        if battleOverState.IsSome then
+            match battleOverState.Value with
             | Victory -> winBattle ()
             | Defeat -> loseBattle ()
             None
@@ -388,7 +233,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
     let battleOrchestration = 
         fullBattleOrchestration
-            (FullBattleState.Init (storyState.CompanionsRecruited |> Set.toList))
+            (BattleState.Init (storyState.CompanionsRecruited |> Set.toList))
             progressBarActorFactory
             enemyProgressBarActorFactory
             teamMemberActorFactory
@@ -428,7 +273,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             ()
 
         member this.Initialise () =
-            let state = FullBattleState.Init (storyState.CompanionsRecruited |> Set.toList)
+            let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
             let bs = BattleState(battleOrchestration, state, winBattle, loseBattle)
             do battleState <- Some bs
             do team <- Beligerant.GetTeamBeligerants bs
