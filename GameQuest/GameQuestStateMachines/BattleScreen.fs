@@ -81,7 +81,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
             interactives.Value
             |> List.choose 
                 (function 
-                    | TeamMemberInteraction (_, Actor actor) 
+                    | TeamMemberInteraction (_, actor) 
                     | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
             |> List.toArray
         )
@@ -95,7 +95,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
 
     member this.TeamMemberActors with get() =
         interactives.Value
-        |> List.choose (function | TeamMemberInteraction (tm, Actor actor) -> Some (tm, actor) | _ -> None)
+        |> List.choose (function | TeamMemberInteraction (tm, actor) -> Some (tm, actor) | _ -> None)
         |> dict
         |> System.Collections.Generic.Dictionary
 

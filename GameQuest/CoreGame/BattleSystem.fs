@@ -36,6 +36,10 @@ type BattleOverState<'TState> =
     | Victory
     | Defeat
 
+type FullBattleInteractive<'TInstant, 'TActor> =
+    | TeamMemberInteraction of StoryShared.TeamMember * 'TActor
+    | EnemyInteraction of BattleInteraction<'TInstant, 'TActor>
+
 type BattleState =
     { TeamMemberStates: Map<StoryShared.TeamMember, TeamMemberState>
       EnemyState: EnemyState }
@@ -79,11 +83,11 @@ module BattleState =
 
 let rec teamMemberOrchestration progressBarFactory teamMemberActorFactory = orchestration {
     do! raiseToOrchestrationWithActions
-            [ Actor (progressBarFactory ()) ]
+            [ progressBarFactory () ]
             (event (function | TeamMemberEvent.ProgressBarComplete _ -> Some () | _ -> None))
             
     do! raiseToOrchestrationWithActions
-            [ Actor (teamMemberActorFactory ()) ]
+            [ teamMemberActorFactory () ]
             (event (function | ChosenAction _ -> Some () | _ -> None))
 
     return! teamMemberOrchestration progressBarFactory teamMemberActorFactory
@@ -108,10 +112,6 @@ let rec enemyOrchestration progressBarFactory = orchestration {
 
     return! enemyOrchestration progressBarFactory
 }
-
-type FullBattleInteractive<'TInstant, 'TActor> =
-    | TeamMemberInteraction of StoryShared.TeamMember * BattleInteraction<'TInstant, 'TActor>
-    | EnemyInteraction of BattleInteraction<'TInstant, 'TActor>
 
 let updateState fullstate = function
     | TeamMemberEvent (tm, ChosenAction (TeamMemberAction.Attack, _)) ->
@@ -140,12 +140,12 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
                  fun teamMember -> 
                     event (chooseOrchestrationEventAndStates (fun (tm, e) -> if tm = teamMember then Some e else None))
                     // Only considering alive team members here
-                    |> filter (fun { State = state: BattleState } -> state |> BattleState.isTeamMemberAlive(teamMember))
+                    |> filter (fun { State = state: BattleState } -> BattleState.isTeamMemberAlive teamMember state)
                     |> choose (chooseOrchestrationEvents (Some))
                     |> compose (teamMemberOrchestration (tmProgressBarFactory teamMember) (teamMemberActorFactory teamMember))
-                    |> map (CircuitBreaker.mapBreak (List.map (fun y -> teamMember, y))))
+                    |> map (CircuitBreaker.mapBreak (List.map (fun y -> (teamMember, y)))))
              |> List.fold combine empty
-             |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, BattleInteraction.mapInstant TeamMemberEvent interaction)))
+             |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, interaction)))
         // Adds the enemy orchestration
         |> combine
             (event (chooseOrchestrationEventAndStates (function | EnemyEvent e -> Some e | _ -> None))
@@ -158,7 +158,7 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
             |> map (fun (state: BattleState) -> 
                 state
                 |> BattleState.deadTeamMembers
-                |> List.map (fun tm -> TeamMemberInteraction (tm, (Actor (teamMemberDeadActorFactory ()))))
+                |> List.map (fun tm -> TeamMemberInteraction (tm, (teamMemberDeadActorFactory ())))
                 |> Break))
         // Return the current state when applying an event
         |> combine
