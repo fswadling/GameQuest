@@ -32,7 +32,7 @@ type BattleEvent =
 type TeamMemberState = int
 type EnemyState = int
 
-type BattleOverState<'TState> =
+type BattleOverState =
     | Victory
     | Defeat
 
@@ -54,7 +54,7 @@ module BattleState =
             Some Defeat
         else if (state.EnemyState <= 0) then
             Some Victory
-        else
+        else 
             None
 
     let isTeamMemberAlive tm state =
@@ -146,12 +146,6 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
                     |> map (CircuitBreaker.mapBreak (List.map (fun y -> (teamMember, y)))))
              |> List.fold combine empty
              |> mapBreak (fun (tm, interaction) -> TeamMemberInteraction (tm, interaction)))
-        // Adds the enemy orchestration
-        |> combine
-            (event (chooseOrchestrationEventAndStates (function | EnemyEvent e -> Some e | _ -> None))
-            |> map raiseToOptionalEventAndState
-            |> compose (enemyOrchestration enemyProgressBarFactory)
-            |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction))
         // Any event can lead to a team member death, so handle that possibility here
         |> combine
             (event chooseStateOnGetNextStep
@@ -160,9 +154,22 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
                 |> BattleState.deadTeamMembers
                 |> List.map (fun tm -> TeamMemberInteraction (tm, (teamMemberDeadActorFactory ())))
                 |> Break))
-        // Return the current state when applying an event
+        // Adds the enemy orchestration
         |> combine
-            (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
-            |> map (CircuitBreaker.retn))))
+            (event (chooseOrchestrationEventAndStates (function | EnemyEvent e -> Some e | _ -> None))
+            |> map raiseToOptionalEventAndState
+            |> compose (enemyOrchestration enemyProgressBarFactory)
+            |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction)))
+        // Return check battle over state and return it if conditions are met
+        |> combine
+            (event (function | { State = state; Event = Some _ } -> BattleState.battleOverState state | _ -> None)
+            |> map (CircuitBreaker.retn)))
+    // Apply instants recursively
+    |> applyRecursively (
+        List.collect (function | Break interactions -> interactions | _ -> [])
+        >> List.choose (function | EnemyInteraction (Instant instant) -> Some instant | _ -> None)
+        >> List.tryHead
+        // Need to pass an optional event, but we dont want to pass None as thats the signal to get the next interactives.
+        >> Option.map Some)
 
 type BattleOrchestration<'TActor> = Orchestration<BattleEvent, BattleState, FullBattleInteractive<BattleEvent, 'TActor>>

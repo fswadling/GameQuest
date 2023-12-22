@@ -250,6 +250,16 @@ let rec combine orc1 orc2 event =
              | None, Some n2 -> Some n2
              | Some n1, Some n2 -> Some (combine n1 n2) }
 
+let applyRecursively getEventFromResults coordination =
+    coordination
+    >> (fun { Result = result; Next = next } ->
+        let event = getEventFromResults result
+        match event, next with
+            | Some event, Some next -> 
+                next event
+            | _ -> 
+                { Result = result; Next = next })
+
 type CoordinationBuilder() =
     member _.Bind(m, f) =
         m |> take 1 |> switchMap f
