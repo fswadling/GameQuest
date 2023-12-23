@@ -53,6 +53,28 @@ let exhaustMap f = exhaustMap (CircuitBreaker.combine (Break >> Coordination.ret
 
 let mapBreak f = Coordination.map (CircuitBreaker.combine (List.map f >> Break) (id >> Continue))
 
+let rec applyBreaksRecursively' resultsSoFar chooser orchestration = function
+    | None -> orchestration None
+    | Some event ->
+        orchestration (Some event)
+        |> (function
+            | { Result = results; Next = None } ->
+                { Result = results; Next = None }
+            | { Result = results; Next = Some next } ->
+                let event = 
+                    (next None).Result
+                    |> List.collect (function | Break breaks -> breaks | _ -> [])
+                    |> List.choose chooser
+                    |> List.tryHead
+
+                match event with
+                | None -> 
+                    { Result = resultsSoFar @ results; Next = Some (applyBreaksRecursively' [] chooser next) }
+                | Some event ->
+                    applyBreaksRecursively' results chooser next (Some event))
+
+let applyBreaksRecursively chooser = applyBreaksRecursively' [] chooser
+
 type OrchestrationBuilder() =
 
     member _.Bind (m, f) =

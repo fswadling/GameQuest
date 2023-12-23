@@ -156,9 +156,10 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
             |> map raiseToOptionalEventAndState
             |> compose (enemyOrchestration enemyProgressBarFactory)
             |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction)))
-        // Return check battle over state and return it if conditions are met
+        // Recursively apply enemy instant attacks within the state machine immediately after they are generated
         |> combine
             (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
             |> map (CircuitBreaker.retn)))
+    |> applyBreaksRecursively (function | EnemyInteraction (Instant instant) -> Some instant | _ -> None)
 
 type BattleOrchestration<'TActor> = Orchestration<BattleEvent, BattleState, FullBattleInteractive<BattleEvent, 'TActor>>

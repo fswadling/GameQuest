@@ -101,10 +101,6 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
         |> List.choose (function | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
         |> List.tryLast
 
-    member this.AllEnemyInstants with get() =
-        interactives.Value
-        |> List.choose (function | EnemyInteraction (Instant event) -> Some event | _ -> None)
-
     member this.DoEvent (event: BattleEvent) =
         let { Result = result; Next = next } = battle (Some event) 
         let state = 
@@ -124,15 +120,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
         | _, None ->
             failwith "Battle orchestration should be infinite sequence"
         | Some state, Some next ->
-            let battleState = BattleState(next, state, winBattle, loseBattle)
-            let instant = List.tryHead battleState.AllEnemyInstants 
-
-            match instant with
-            | Some instant ->
-                // Recursively do instant events
-                battleState.DoEvent(instant)
-            | None ->
-                Some (BattleState(next, state, winBattle, loseBattle))
+            Some (BattleState(next, state, winBattle, loseBattle))
 
     member this.OnUpdate gameTime =
         for (actor: IActor) in allActors.Value
