@@ -32,10 +32,6 @@ type BattleEvent =
 type TeamMemberState = int
 type EnemyState = int
 
-type BattleOverState =
-    | Victory
-    | Defeat
-
 type FullBattleInteractive<'TInstant, 'TActor> =
     | TeamMemberInteraction of StoryShared.TeamMember * 'TActor
     | EnemyInteraction of BattleInteraction<'TInstant, 'TActor>
@@ -49,13 +45,13 @@ type BattleState =
           EnemyState = 100 }
 
 module BattleState =
-    let battleOverState state = 
+    let (|Victory|Defeat|Ongoing|) state = 
         if (state.TeamMemberStates |> Map.forall (fun _ hp -> hp <= 0)) then
-            Some Defeat
+            Defeat
         else if (state.EnemyState <= 0) then
-            Some Victory
+            Victory
         else 
-            None
+            Ongoing
 
     let isTeamMemberAlive tm state =
         state.TeamMemberStates |> Map.exists (fun tm2 hp -> tm = tm2 && hp > 0)
@@ -162,14 +158,7 @@ let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFa
             |> mapBreak ((BattleInteraction.mapInstant EnemyEvent) >> EnemyInteraction)))
         // Return check battle over state and return it if conditions are met
         |> combine
-            (event (function | { State = state; Event = Some _ } -> BattleState.battleOverState state | _ -> None)
+            (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
             |> map (CircuitBreaker.retn)))
-    // Apply instants recursively
-    |> applyRecursively (
-        List.collect (function | Break interactions -> interactions | _ -> [])
-        >> List.choose (function | EnemyInteraction (Instant instant) -> Some instant | _ -> None)
-        >> List.tryHead
-        // Need to pass an optional event, but we dont want to pass None as thats the signal to get the next interactives.
-        >> Option.map Some)
 
 type BattleOrchestration<'TActor> = Orchestration<BattleEvent, BattleState, FullBattleInteractive<BattleEvent, 'TActor>>

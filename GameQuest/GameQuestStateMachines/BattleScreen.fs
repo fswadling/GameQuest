@@ -6,6 +6,7 @@ open Microsoft.Xna.Framework
 open OrchestrationCE.Coordination
 open OrchestrationCE.Orchestration
 open BattleSystem
+open BattleState
 open Screens
 open GameState
 
@@ -89,10 +90,6 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
     member this.BattleState with get() =
         state
 
-    member this.AllEnemyInstants with get() =
-        interactives.Value
-        |> List.choose (function | EnemyInteraction (Instant event) -> Some event | _ -> None)
-
     member this.TeamMemberActors with get() =
         interactives.Value
         |> List.choose (function | TeamMemberInteraction (tm, actor) -> Some (tm, actor) | _ -> None)
@@ -104,40 +101,38 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
         |> List.choose (function | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
         |> List.tryLast
 
+    member this.AllEnemyInstants with get() =
+        interactives.Value
+        |> List.choose (function | EnemyInteraction (Instant event) -> Some event | _ -> None)
+
     member this.DoEvent (event: BattleEvent) =
-        let { Result = result; Next = next } = battle (Some event)
-        let newState = 
-            result 
-            |> List.choose (function | Continue state -> Some state | _ -> None) 
-            |> List.head
+        let { Result = result; Next = next } = battle (Some event) 
+        let state = 
+            result
+            |> List.choose (function | Continue x -> Some x | _ -> None)
+            |> List.tryLast
 
-        let battleOverState = BattleState.battleOverState newState
-
-        if battleOverState.IsSome then
-            match battleOverState.Value with
-            | Victory -> winBattle ()
-            | Defeat -> loseBattle ()
+        match state, next with
+        | None, _ ->
+            failwith "Battle orchestration should always return state upon applying an event"
+        | Some Victory, _ ->
+            winBattle()
             None
-        else
+        | Some Defeat, _ ->
+            loseBattle()
+            None
+        | _, None ->
+            failwith "Battle orchestration should be infinite sequence"
+        | Some state, Some next ->
+            let battleState = BattleState(next, state, winBattle, loseBattle)
+            let instant = List.tryHead battleState.AllEnemyInstants 
 
-        let nextState = Option.map (fun x -> BattleState(x, newState, winBattle, loseBattle)) next
-
-        let nextState = 
-            match nextState with
-            | None -> None
-            | Some nextState -> 
-                let instantResult = 
-                    List.tryHead nextState.AllEnemyInstants
-                    |> Option.map (fun y -> nextState.DoEvent(y))
-                match instantResult with
-                // If no instant events, then just return the next state
-                | None -> Some nextState
-                // If there is an instant event, then return the state result of applying it
-                | Some (Some nextState) -> Some nextState
-                // If there was an instant event, but it didn't result in a state, then return None
-                | Some None -> None
-
-        nextState
+            match instant with
+            | Some instant ->
+                // Recursively do instant events
+                battleState.DoEvent(instant)
+            | None ->
+                Some (BattleState(next, state, winBattle, loseBattle))
 
     member this.OnUpdate gameTime =
         for (actor: IActor) in allActors.Value
