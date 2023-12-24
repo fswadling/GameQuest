@@ -9,6 +9,7 @@ open BattleSystem
 open BattleState
 open Screens
 open GameState
+open Action
 
 type IActor =
     abstract member OnUpdate: gameTime: GameTime -> unit
@@ -76,10 +77,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
     let allActors = 
         lazy (
             interactives.Value
-            |> List.choose 
-                (function 
-                    | TeamMemberInteraction (_, actor) 
-                    | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
+            |> List.choose (function | Actor actor -> Some actor | _ -> None)
             |> List.toArray
         )
 
@@ -88,13 +86,13 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
 
     member this.TeamMemberActors with get() =
         interactives.Value
-        |> List.choose (function | TeamMemberInteraction (tm, actor) -> Some (tm, actor) | _ -> None)
+        |> List.choose (function | TeamMemberActor (tm, actor) -> Some (tm, actor) | _ -> None)
         |> dict
         |> System.Collections.Generic.Dictionary
 
     member this.EnemyActor with get() =
         interactives.Value
-        |> List.choose (function | EnemyInteraction (Actor actor) -> Some actor | _ -> None)
+        |> List.choose (function | EnemyActor actor -> Some actor | _ -> None)
         |> List.tryLast
 
     member this.DoEvent (event: BattleEvent) =
@@ -181,11 +179,9 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         do battleState <- newBattleState.Value
         do updateBeligerants()
 
-    
-
     let progressBarActorFactory teamMember () = 
         let onProgressBarComplete gameTime =
-            let event = TeamMemberEvent (teamMember, TeamMemberEvent.ProgressBarComplete(gameTime))
+            let event = TeamMemberProgressBarComplete(teamMember, gameTime)
             do applyEventAndUpdate event
                 
         new ProgressBarActor(onProgressBarComplete)
@@ -193,15 +189,15 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
     let enemyProgressBarActorFactory gameTime =
         let enemyProgressBarComplete gameTime =
-            let event = EnemyEvent (EnemyEvent.EnemyProgressBarComplete(gameTime))
+            let event = EnemyProgressBarComplete(gameTime)
             do applyEventAndUpdate event
 
         new ProgressBarActor(enemyProgressBarComplete)
         :> IActor
 
     let teamMemberActorFactory teamMember () =
-        let tmActionChosen action =
-            let event = TeamMemberEvent (teamMember, TeamMemberEvent.ChosenAction(action))
+        let tmActionChosen (action, gameTime) =
+            let event = TeamMemberChosenAction (teamMember, action, gameTime)
             do applyEventAndUpdate event
 
         new TeamMemberActor(tmActionChosen)
