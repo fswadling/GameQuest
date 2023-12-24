@@ -16,7 +16,7 @@ type IActor =
     abstract member GetPanel: unit -> VerticalStackPanel
 
 type ProgressBarActor (notifyComplete) =
-    let progresBar = HorizontalProgressBar(Width=100)
+    let progressBar = HorizontalProgressBar(Width=100)
     let mutable startTime: TimeSpan option = None
     interface IActor with
         member this.OnUpdate gameTime =
@@ -26,13 +26,13 @@ type ProgressBarActor (notifyComplete) =
             | Some startTime ->
                 let progress = (gameTime.TotalGameTime - startTime) / TimeSpan.FromSeconds(2.0)
                 if (progress < 1.0) then
-                    do progresBar.Value <- (float32)progress * 100.0f
+                    do progressBar.Value <- (float32)progress * 100.0f
                 else
                     do notifyComplete gameTime.TotalGameTime
 
         member this.GetPanel () =
             let panel = VerticalStackPanel()
-            do panel.Widgets.Add(progresBar)
+            do panel.Widgets.Add(progressBar)
             panel
 
 type TeamMemberActor (onActionChosen) =
@@ -66,34 +66,33 @@ type TeamMemberDeadActor () =
 
 [<AllowNullLiteral>]
 type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBattle) =
-    let interactives = 
-        lazy (
-            let { CoordinationResult.Result = results } = battle None
-            results
-            |> List.choose (function | Break interactives -> Some interactives | _ -> None)
-            |> List.collect id
-        )
+    let { CoordinationResult.Result = results } = battle None
+    let actions = List.collect (function | Break actions -> actions | _ -> []) results
+    let actors = 
+        List.choose (function | Actor actor -> Some actor | _ -> None) actions
+        // make this an array as we will be iterating over it a lot
+        |> List.toArray
 
-    let allActors = 
-        lazy (
-            interactives.Value
-            |> List.choose (function | Actor actor -> Some actor | _ -> None)
-            |> List.toArray
-        )
+    let teamMemberActors =
+        actions
+        |> List.choose (function | TeamMemberActor (tm, actor) -> Some (tm, actor) | _ -> None)
+        |> dict
+        |> System.Collections.Generic.Dictionary
+
+    let enemyActor = 
+        actions
+        |> List.choose (function | EnemyActor actor -> Some actor | _ -> None)
+        // There should always be an enemy actor, so throw an exception if there isn't
+        |> List.last
 
     member this.BattleState with get() =
         state
 
     member this.TeamMemberActors with get() =
-        interactives.Value
-        |> List.choose (function | TeamMemberActor (tm, actor) -> Some (tm, actor) | _ -> None)
-        |> dict
-        |> System.Collections.Generic.Dictionary
+        teamMemberActors
 
     member this.EnemyActor with get() =
-        interactives.Value
-        |> List.choose (function | EnemyActor actor -> Some actor | _ -> None)
-        |> List.tryLast
+        enemyActor
 
     member this.DoEvent (event: BattleEvent) =
         let { Result = result; Next = next } = battle (Some event) 
@@ -117,7 +116,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
             Some (BattleState(next, state, winBattle, loseBattle))
 
     member this.OnUpdate gameTime =
-        for (actor: IActor) in allActors.Value
+        for (actor: IActor) in actors
             do actor.OnUpdate(gameTime)
 
 [<AllowNullLiteral>]
@@ -146,8 +145,7 @@ type Beligerant (name: string, actor: IActor) =
         |> System.Collections.Generic.Dictionary
 
     static member GetEnemyBeligerant (battleState: BattleState) =
-        battleState.EnemyActor
-        |> Option.map (fun actor -> Beligerant("Enemy", actor))
+        Beligerant("Enemy", battleState.EnemyActor)
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleState = null
@@ -166,7 +164,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             do beligerant.UpdateHealth tmState.Value
 
         let enemyActor = battleState.EnemyActor
-        do enemy.UpdateActorPanel(enemyActor.Value);
+        do enemy.UpdateActorPanel(enemyActor);
         do enemy.UpdateHealth(battleState.BattleState.EnemyState)
 
     let applyEventAndUpdate event =
@@ -251,7 +249,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
             let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
             do battleState <- BattleState(battleOrchestration, state, winBattle, loseBattle)
             do team <- Beligerant.GetTeamBeligerants battleState
-            do enemy <- (Beligerant.GetEnemyBeligerant battleState).Value
+            do enemy <- Beligerant.GetEnemyBeligerant battleState
             do desktop.Root <- getRoot ()
             do updateBeligerants ()
 
