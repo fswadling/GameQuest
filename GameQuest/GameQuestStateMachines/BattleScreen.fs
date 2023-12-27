@@ -120,7 +120,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
             do actor.OnUpdate(gameTime)
 
 [<AllowNullLiteral>]
-type Beligerant (name: string, actor: IActor) =
+type BeligerantPanelManager (name: string, actor: IActor) =
     let memberPanel = VerticalStackPanel()
     do memberPanel.Widgets.Add(Label(Text = name))
     let healthLabel = Label(Text="Health")
@@ -129,7 +129,7 @@ type Beligerant (name: string, actor: IActor) =
     do actorPanel.Widgets.Add(actor.GetPanel())
     do memberPanel.Widgets.Add(actorPanel)
 
-    member this.MemberPanel with get() = memberPanel
+    member this.Panel with get() = memberPanel
 
     member this.UpdateHealth(health: float) =
        do healthLabel.Text <- sprintf "Health: %f" health
@@ -138,19 +138,19 @@ type Beligerant (name: string, actor: IActor) =
         do actorPanel.Widgets.Clear()
         do actorPanel.Widgets.Add(actor.GetPanel())
 
-    static member GetTeamBeligerants (battleState: BattleState) =
+    static member GetTeamPanelManagers (battleState: BattleState) =
         battleState.TeamMemberActors
-        |> Seq.map (fun kvp -> kvp.Key, Beligerant(kvp.Key.ToString(), kvp.Value))
+        |> Seq.map (fun kvp -> kvp.Key, BeligerantPanelManager(kvp.Key.ToString(), kvp.Value))
         |> dict
         |> System.Collections.Generic.Dictionary
 
-    static member GetEnemyBeligerant (battleState: BattleState) =
-        Beligerant("Enemy", battleState.EnemyActor)
+    static member GetEnemyPanelManager (battleState: BattleState) =
+        BeligerantPanelManager("Enemy", battleState.EnemyActor)
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleState = null
-    let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, Beligerant>()
-    let mutable enemy: Beligerant = null
+    let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, BeligerantPanelManager>()
+    let mutable enemy: BeligerantPanelManager = null
 
     let updateBeligerants () =
         let tmActors = battleState.TeamMemberActors
@@ -217,12 +217,12 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         let newState = gameState.DoEvent (Story.StoryEvent.BattleOver)
         match newState with
         | Some newState -> updateScreenFn.Invoke(OpenGameScreen newState)
-        | None -> ()
+        | None -> failwith "No new state from applying BattleOver event"
 
     let loseBattle () = 
          do updateScreenFn.Invoke(OpenGameOverScreen gameState)
 
-    let getRoot () =
+    let setupScreen () =
         let panel = Panel(VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center)
         let stack = VerticalStackPanel()
         let winButtonLabel = Label(HorizontalAlignment = HorizontalAlignment.Center, Text = "Win");
@@ -230,10 +230,10 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         let teamStack = HorizontalStackPanel(VerticalAlignment = VerticalAlignment.Center)
 
         for kvp in team do
-            do teamStack.Widgets.Add(kvp.Value.MemberPanel)
+            do teamStack.Widgets.Add(kvp.Value.Panel)
 
         let enemyStack = HorizontalStackPanel(VerticalAlignment = VerticalAlignment.Center)
-        do enemyStack.Widgets.Add(enemy.MemberPanel)
+        do enemyStack.Widgets.Add(enemy.Panel)
         do winButton.TouchDown.Add(fun _ -> winBattle ())
         do stack.Widgets.Add(winButton);
         do stack.Widgets.Add(enemyStack);
@@ -248,9 +248,9 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         member this.Initialise () =
             let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
             do battleState <- BattleState(battleOrchestration, state, winBattle, loseBattle)
-            do team <- Beligerant.GetTeamBeligerants battleState
-            do enemy <- Beligerant.GetEnemyBeligerant battleState
-            do desktop.Root <- getRoot ()
+            do team <- BeligerantPanelManager.GetTeamPanelManagers battleState
+            do enemy <- BeligerantPanelManager.GetEnemyPanelManager battleState
+            do desktop.Root <- setupScreen ()
             do updateBeligerants ()
 
         member this.OnUpdate gameTime =
