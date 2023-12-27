@@ -275,7 +275,7 @@ type CoordinationBuilder() =
     member _.MergeSources(coordination1, coordination2) =
         zip (coordination1 |> take 1) (coordination2 |> take 1)
 
-    member __.Zero() =
+    member _.Zero() =
         retn ()
 
 let coordination = CoordinationBuilder()
