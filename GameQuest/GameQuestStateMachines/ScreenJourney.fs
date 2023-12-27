@@ -34,8 +34,6 @@ let rec mainLoop desktop updateFn gameState = orchestration {
             orchestration {
                 do! event (function | _ -> None)
                     |> raiseToOrchestrationWithActions [new Screens.GameOverScreen(desktop) :> IScreen]
-
-                return! mainLoop desktop updateFn gameState
             }
         else mainLoop desktop updateFn gameState
 }
