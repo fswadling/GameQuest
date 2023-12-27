@@ -119,6 +119,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
         for (actor: IActor) in actors
             do actor.OnUpdate(gameTime)
 
+// Not existing would be an exceptional error, so using nulls rather than option types as it means less boilerplate
 [<AllowNullLiteral>]
 type BeligerantPanelManager (name: string, actor: IActor) =
     let memberPanel = VerticalStackPanel()
