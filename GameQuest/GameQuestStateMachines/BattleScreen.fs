@@ -116,8 +116,8 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
             Some (BattleState(next, state, winBattle, loseBattle))
 
     member this.OnUpdate gameTime =
-        for (actor: IActor) in actors
-            do actor.OnUpdate(gameTime)
+         do actors |> Array.iter (fun actor -> actor.OnUpdate(gameTime)) 
+            
 
 // Not existing would be an exceptional error, so using nulls rather than option types as it means less boilerplate
 [<AllowNullLiteral>]
