@@ -4,8 +4,6 @@ open Myra.Graphics2D.UI
 open Microsoft.Xna.Framework.Input
 open Myra.Graphics2D.UI.File
 open System
-open System.Reactive.Subjects
-open System.Reactive.Linq
 open Microsoft.Xna.Framework
 open OrchestrationCE.Coordination
 open GameState
@@ -26,7 +24,6 @@ type ScreenJourneyEvent =
 
 [<AllowNullLiteral>]
 type IScreen =
-    inherit IDisposable
     abstract member Initialise: unit -> unit
     abstract member OnUpdate: GameTime -> unit
     abstract member OnRender: unit -> unit
@@ -63,9 +60,6 @@ type StartMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEve
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            ()
-
         member this.Initialise () =
             desktop.Root <- root
 
@@ -100,9 +94,6 @@ type StartOrLoadMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJour
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            ()
-
         member this.Initialise () =
             desktop.Root <- root
 
@@ -116,14 +107,7 @@ type StartOrLoadMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJour
 
 type GameScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, gameState: GameState.GameState) =
     let mutable gameState = gameState
-    
-    let escKeySubject = new Subject<bool>()
-
-    let subscription = 
-        escKeySubject
-            .Buffer(2, 1)
-            .Select(List.ofSeq)
-            .Subscribe(function | [false; true] -> updateScreenFn.Invoke(OpenMenuScreen gameState) | _ -> ())
+    let mutable escKeyDown = Keyboard.GetState().IsKeyDown(Keys.Escape)
 
     let doEvent buildScreen event =
         match gameState.DoEvent event with
@@ -168,28 +152,23 @@ type GameScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEv
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            subscription.Dispose()
-            escKeySubject.Dispose()
-
         member this.Initialise () =
             desktop.Root <- buildScreen gameState
             
         member this.OnUpdate gameTime =
-            escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
+            let escKeyState = Keyboard.GetState().IsKeyDown(Keys.Escape)
+            if escKeyState && not escKeyDown then 
+                escKeyDown <- true
+                updateScreenFn.Invoke(OpenMenuScreen gameState)
+            else if not escKeyState && escKeyDown then 
+                escKeyDown <- false
 
         member this.OnRender () =
             desktop.Render()
 
 type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, gameState: GameState, story: Story.Story) =
     let mutable gameState = gameState
-
-    let escKeySubject = new Subject<bool>()
-    let subscription = 
-        escKeySubject
-            .Buffer(2, 1)
-            .Select(List.ofSeq)
-            .Subscribe(function | [false; true] -> updateFn.Invoke(OpenGameScreen gameState) | _ -> ())
+    let mutable escKeyDown = Keyboard.GetState().IsKeyDown(Keys.Escape)
 
     let saveGame () =
         let dialog = FileDialog(FileDialogMode.SaveFile, Filter="*.json")
@@ -227,15 +206,16 @@ type MenuScreen (desktop: Desktop, updateFn: System.Action<ScreenJourneyEvent>, 
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            subscription.Dispose()
-            escKeySubject.Dispose()
-
         member this.Initialise () =
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            escKeySubject.OnNext(Keyboard.GetState().IsKeyDown(Keys.Escape))
+            let escKeyState = Keyboard.GetState().IsKeyDown(Keys.Escape)
+            if escKeyState && not escKeyDown then 
+                escKeyDown <- true
+                updateFn.Invoke(OpenGameScreen gameState)
+            else if not escKeyState && escKeyDown then 
+                escKeyDown <- false
 
         member this.OnRender () =
             desktop.Render()
@@ -250,9 +230,6 @@ type GameOverScreen (desktop: Desktop) =
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            ()
-
         member this.Initialise () =
             desktop.Root <- root
 

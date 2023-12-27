@@ -28,7 +28,6 @@ namespace GameQuest
 
         private void OnScreenJourneyEvent(Screens.ScreenJourneyEvent e)
         {
-            this.screenManager?.Screen?.Dispose();
             this.screenManager = this.screenManager?.DoStep(e);
             this.screenManager?.Screen?.Initialise();
         }

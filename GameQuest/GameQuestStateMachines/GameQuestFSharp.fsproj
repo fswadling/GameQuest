@@ -15,8 +15,7 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Json" Version="0.4.1" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.1.303" />
-    <PackageReference Include="Myra" Version="1.5.2" />
-    <PackageReference Include="System.Reactive" Version="6.0.0" />
+    <PackageReference Include="Myra" Version="1.5.4" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="7.0.401" />
+    <PackageReference Update="FSharp.Core" Version="8.0.100" />
   </ItemGroup>
 
 </Project>

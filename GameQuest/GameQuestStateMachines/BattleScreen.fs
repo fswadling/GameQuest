@@ -242,9 +242,6 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         panel
 
     interface IScreen with
-        member this.Dispose(): unit = 
-            ()
-
         member this.Initialise () =
             let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
             do battleState <- BattleState(battleOrchestration, state, winBattle, loseBattle)
