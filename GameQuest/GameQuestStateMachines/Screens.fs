@@ -35,7 +35,8 @@ type ScreenManager (coordination) =
         let { Result = screens } = coordination None 
         screens |> List.tryLast
  
-    member this.Screen with get() : IScreen = if screen.IsSome then screen.Value else null
+    member this.Screen with get() : IScreen = 
+        if screen.IsSome then screen.Value else null
 
     member this.DoStep (e: ScreenJourneyEvent) =
         let { Next = next } = coordination (Some e)
