@@ -121,7 +121,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
 
 // Not existing would be an exceptional error, so using nulls rather than option types as it means less boilerplate
 [<AllowNullLiteral>]
-type BeligerantPanelManager (name: string, actor: IActor) =
+type CombatantPanelManager (name: string, actor: IActor) =
     let memberPanel = VerticalStackPanel()
     do memberPanel.Widgets.Add(Label(Text = name))
     let healthLabel = Label(Text="Health")
@@ -141,28 +141,28 @@ type BeligerantPanelManager (name: string, actor: IActor) =
 
     static member GetTeamPanelManagers (battleState: BattleState) =
         battleState.TeamMemberActors
-        |> Seq.map (fun kvp -> kvp.Key, BeligerantPanelManager(kvp.Key.ToString(), kvp.Value))
+        |> Seq.map (fun kvp -> kvp.Key, CombatantPanelManager(kvp.Key.ToString(), kvp.Value))
         |> dict
         |> System.Collections.Generic.Dictionary
 
     static member GetEnemyPanelManager (battleState: BattleState) =
-        BeligerantPanelManager("Enemy", battleState.EnemyActor)
+        CombatantPanelManager("Enemy", battleState.EnemyActor)
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleState = null
-    let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, BeligerantPanelManager>()
-    let mutable enemy: BeligerantPanelManager = null
+    let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, CombatantPanelManager>()
+    let mutable enemy: CombatantPanelManager = null
 
-    let updateBeligerants () =
+    let updateCombatants () =
         let tmActors = battleState.TeamMemberActors
         let tmState = battleState.BattleState.TeamMemberStates
 
         for kvp in team do
-            let beligerant = kvp.Value
+            let combatantManager = kvp.Value
             let actor = tmActors[kvp.Key]
-            do beligerant.UpdateActorPanel(actor)
+            do combatantManager.UpdateActorPanel(actor)
             let tmState = tmState.TryFind kvp.Key
-            do beligerant.UpdateHealth tmState.Value
+            do combatantManager.UpdateHealth tmState.Value
 
         let enemyActor = battleState.EnemyActor
         do enemy.UpdateActorPanel(enemyActor);
@@ -176,7 +176,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         else
 
         do battleState <- newBattleState.Value
-        do updateBeligerants()
+        do updateCombatants()
 
     let progressBarActorFactory teamMember () = 
         let onProgressBarComplete gameTime =
@@ -246,10 +246,10 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
         member this.Initialise () =
             let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
             do battleState <- BattleState(battleOrchestration, state, winBattle, loseBattle)
-            do team <- BeligerantPanelManager.GetTeamPanelManagers battleState
-            do enemy <- BeligerantPanelManager.GetEnemyPanelManager battleState
+            do team <- CombatantPanelManager.GetTeamPanelManagers battleState
+            do enemy <- CombatantPanelManager.GetEnemyPanelManager battleState
             do desktop.Root <- setupScreen ()
-            do updateBeligerants ()
+            do updateCombatants ()
 
         member this.OnUpdate gameTime =
             do battleState.OnUpdate(gameTime)
