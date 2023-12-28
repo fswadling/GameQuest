@@ -54,8 +54,7 @@ let ScreenJouney updateFn =
             | Some fileName -> GameState.Load(fileName, Story.story)
             | None -> Some (GameState.New(Story.story))
 
-        do! 
-            match gameState with
+        do! match gameState with
             | Some gameState -> mainLoop desktop updateFn gameState
             | None -> orchestration { return () }
 

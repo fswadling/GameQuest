@@ -33,7 +33,7 @@ type IScreen =
 type ScreenManager (coordination) =
     let screen = 
         let { Result = screens } = coordination None 
-        screens |> List.tryLast
+        screens |> List.tryExactlyOne
  
     member this.Screen with get() : IScreen = 
         if screen.IsSome then screen.Value else null
@@ -70,10 +70,9 @@ type StartMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEve
             desktop.Render()
 
 type StartOrLoadMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>) =
-    let mutable selectedFilePath = None
     let onLoadComplete (dialog: FileDialog) = 
         if dialog.Result
-        then selectedFilePath <- Some dialog.FilePath
+        then updateScreenFn.Invoke(StartLoadSelected (Some dialog.FilePath)) 
 
     let root =
         let dialog = FileDialog(FileDialogMode.OpenFile, Filter="*.json")
@@ -97,9 +96,7 @@ type StartOrLoadMenu (desktop: Desktop, updateScreenFn: System.Action<ScreenJour
             desktop.Root <- root
 
         member this.OnUpdate gameTime =
-            match selectedFilePath with
-            | Some filePath -> updateScreenFn.Invoke(StartLoadSelected (Some filePath))
-            | None -> ()
+            ()
 
         member this.OnRender () =
             desktop.Render()
