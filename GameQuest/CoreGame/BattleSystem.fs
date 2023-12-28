@@ -150,10 +150,11 @@ let fullBattleOrchestration teamMembers tmProgressBarFactory enemyProgressBarFac
             (event (chooseOrchestrationEventAndStates (function | BattleEvent.EnemyEvent as e -> Some e | _ -> None))
             |> map raiseToOptionalEventAndState
             |> compose (enemyOrchestration enemyProgressBarFactory))
-        // Recursively apply enemy instant attacks within the state machine immediately after they are generated
+        // Return the state on every event
         |> combine
             (event (function | { State = state; Event = Some _ } -> Some state | _ -> None)
             |> map (CircuitBreaker.retn)))
+    // Recursively apply enemy instant attacks within the state machine immediately after they are generated
     |> applyBreaksRecursively (function | Action.Instant event -> Some event | _ -> None)
 
 type BattleOrchestration<'TActor> = Orchestration<BattleEvent, BattleState, Action<'TActor>>
