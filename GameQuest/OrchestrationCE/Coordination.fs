@@ -240,9 +240,9 @@ let rec collect f coordination =
         let result' = result |> List.collect f
         { Result = result'; Next = next |> Option.map (collect f) }
 
-let rec combine orc1 orc2 event =
-    let { Result = r1; Next = n1 } = orc1 event
-    let { Result = r2; Next = n2 } = orc2 event
+let rec combine coordination1 coordination2 event =
+    let { Result = r1; Next = n1 } = coordination1 event
+    let { Result = r2; Next = n2 } = coordination2 event
     { Result = r1 @ r2; 
       Next = match n1, n2 with
              | None, None -> None

@@ -108,21 +108,20 @@ let rec enemyOrchestration progressBarFactory = orchestration {
     return! enemyOrchestration progressBarFactory
 }
 
-let updateState fullstate = function
+let updateState state = function
     | TeamMemberChosenAction (tm, TeamMemberAction.Attack, _) ->
-        let enemyState = fullstate.EnemyState - 10
-        { fullstate with EnemyState = enemyState }
+        let enemyState = state.EnemyState - 10
+        { state with EnemyState = enemyState }
     | EnemyAttack tm ->
-        BattleState.reduceTeamMemberHealth tm 10 fullstate
+        BattleState.reduceTeamMemberHealth tm 10 state
     | TeamMemberChosenAction (tm, TeamMemberAction.UsePotion, _) ->
-        BattleState.healTeamMember tm fullstate
+        BattleState.healTeamMember tm state
     | _ -> 
-        fullstate
+        state
 
-let fullBattleOrchestration initialState tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMemberDeadActorFactory = 
-    let teamMembers = initialState.TeamMemberStates |> Map.keys |> List.ofSeq
+let fullBattleOrchestration teamMembers tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMemberDeadActorFactory = 
     event Some
-    |> scan (stateAccumulator updateState) ({ Event = None; State = initialState })
+    |> scan (stateAccumulator updateState) ({ Event = None; State = BattleState.Init teamMembers })
     |> skip 1
     |> compose 
         (event (chooseOrchestrationEventAndStates (function | BattleEvent.TeamMemberEvent (tm) as e -> Some (tm, e) | _ -> None))

@@ -53,7 +53,7 @@ let exhaustMap f = exhaustMap (CircuitBreaker.combine (Break >> Coordination.ret
 
 let mapBreak f = Coordination.map (CircuitBreaker.combine (List.map f >> Break) (id >> Continue))
 
-let rec applyBreaksRecursively' resultsSoFar chooser orchestration = function
+let rec private applyBreaksRecursively' resultsSoFar chooser orchestration = function
     | None -> orchestration None
     | Some event ->
         orchestration (Some event)

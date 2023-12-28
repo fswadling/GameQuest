@@ -65,7 +65,7 @@ type TeamMemberDeadActor () =
             panel
 
 [<AllowNullLiteral>]
-type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBattle) =
+type BattleManager (battle: BattleOrchestration<IActor>, state, winBattle, loseBattle) =
     let { CoordinationResult.Result = results } = battle None
     let actions = List.collect (function | Break actions -> actions | _ -> []) results
     let actors = 
@@ -113,7 +113,7 @@ type BattleState (battle: BattleOrchestration<IActor>, state, winBattle, loseBat
         | _, None ->
             failwith "Battle orchestration should be infinite sequence"
         | Some state, Some next ->
-            Some (BattleState(next, state, winBattle, loseBattle))
+            Some (BattleManager(next, state, winBattle, loseBattle))
 
     member this.OnUpdate gameTime =
          do actors |> Array.iter (fun actor -> actor.OnUpdate(gameTime)) 
@@ -139,17 +139,17 @@ type CombatantPanelManager (name: string, actor: IActor) =
         do actorPanel.Widgets.Clear()
         do actorPanel.Widgets.Add(actor.GetPanel())
 
-    static member GetTeamPanelManagers (battleState: BattleState) =
+    static member GetTeamPanelManagers (battleState: BattleManager) =
         battleState.TeamMemberActors
         |> Seq.map (fun kvp -> kvp.Key, CombatantPanelManager(kvp.Key.ToString(), kvp.Value))
         |> dict
         |> System.Collections.Generic.Dictionary
 
-    static member GetEnemyPanelManager (battleState: BattleState) =
+    static member GetEnemyPanelManager (battleState: BattleManager) =
         CombatantPanelManager("Enemy", battleState.EnemyActor)
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
-    let mutable battleState: BattleState = null
+    let mutable battleState: BattleManager = null
     let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, CombatantPanelManager>()
     let mutable enemy: CombatantPanelManager = null
 
@@ -208,7 +208,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
 
     let battleOrchestration = 
         fullBattleOrchestration
-            (BattleState.Init (storyState.CompanionsRecruited |> Set.toList))
+            (Set.toList storyState.CompanionsRecruited)
             progressBarActorFactory
             enemyProgressBarActorFactory
             teamMemberActorFactory
@@ -245,7 +245,7 @@ type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourney
     interface IScreen with
         member this.Initialise () =
             let state = BattleState.Init (storyState.CompanionsRecruited |> Set.toList)
-            do battleState <- BattleState(battleOrchestration, state, winBattle, loseBattle)
+            do battleState <- BattleManager(battleOrchestration, state, winBattle, loseBattle)
             do team <- CombatantPanelManager.GetTeamPanelManagers battleState
             do enemy <- CombatantPanelManager.GetEnemyPanelManager battleState
             do desktop.Root <- setupScreen ()
