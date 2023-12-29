@@ -31,6 +31,6 @@ let raiseToOptionalEventAndState = function
     | { Event = None; State = state } ->
         None
 
-let chooseStateOnGetNextStep = function
+let chooseStateOnGetAction = function
     | { Event = None; State = state } -> Some state
     | _ -> None

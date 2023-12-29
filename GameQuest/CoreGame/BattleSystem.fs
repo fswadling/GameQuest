@@ -58,7 +58,7 @@ module BattleState =
     let deadTeamMembers state = 
         state.TeamMemberStates |> Map.filter (fun _ hp -> hp <= 0) |> Map.keys |> List.ofSeq
 
-    let reduceTeamMemberHealth tm damage state =
+    let private reduceTeamMemberHealth tm damage state =
         let teamMemberStates = 
             state.TeamMemberStates
             |> Map.map (fun tm' health -> 
@@ -67,7 +67,7 @@ module BattleState =
                 else health)
         { state with TeamMemberStates = teamMemberStates }
 
-    let healTeamMember tm state =
+    let private healTeamMember tm state =
         let teamMemberStates = 
             state.TeamMemberStates
             |> Map.map (fun tm' health -> 
@@ -75,6 +75,17 @@ module BattleState =
                 then Math.Min(health + 50, 100)
                 else health)
         { state with TeamMemberStates = teamMemberStates }
+
+    let updateState state = function
+        | TeamMemberChosenAction (tm, TeamMemberAction.Attack, _) ->
+            let enemyState = state.EnemyState - 10
+            { state with EnemyState = enemyState }
+        | EnemyAttack tm ->
+            reduceTeamMemberHealth tm 10 state
+        | TeamMemberChosenAction (tm, TeamMemberAction.UsePotion, _) ->
+            healTeamMember tm state
+        | _ -> 
+            state
 
 let rec teamMemberOrchestration tm progressBarFactory teamMemberActorFactory = orchestration {
     do! raiseToOrchestrationWithActions
@@ -94,6 +105,7 @@ let rec enemyOrchestration progressBarFactory = orchestration {
             [ EnemyActor (progressBarFactory ()) ]
             (event (function |{ Event = EnemyProgressBarComplete _; State = state } -> Some state | _ -> None))
 
+    // Simple enemy ai: attack the weakest team member
     let weakestTeamMember =
         battleState.TeamMemberStates
         |> Map.toSeq
@@ -108,20 +120,9 @@ let rec enemyOrchestration progressBarFactory = orchestration {
     return! enemyOrchestration progressBarFactory
 }
 
-let updateState state = function
-    | TeamMemberChosenAction (tm, TeamMemberAction.Attack, _) ->
-        let enemyState = state.EnemyState - 10
-        { state with EnemyState = enemyState }
-    | EnemyAttack tm ->
-        BattleState.reduceTeamMemberHealth tm 10 state
-    | TeamMemberChosenAction (tm, TeamMemberAction.UsePotion, _) ->
-        BattleState.healTeamMember tm state
-    | _ -> 
-        state
-
 let fullBattleOrchestration teamMembers tmProgressBarFactory enemyProgressBarFactory teamMemberActorFactory teamMemberDeadActorFactory = 
     event Some
-    |> scan (stateAccumulator updateState) ({ Event = None; State = BattleState.Init teamMembers })
+    |> scan (stateAccumulator BattleState.updateState) ({ Event = None; State = BattleState.Init teamMembers })
     |> skip 1
     |> compose 
         (event (chooseOrchestrationEventAndStates (function | BattleEvent.TeamMemberEvent (tm) as e -> Some (tm, e) | _ -> None))
@@ -138,7 +139,7 @@ let fullBattleOrchestration teamMembers tmProgressBarFactory enemyProgressBarFac
              |> List.fold combine empty)
         // Any event can lead to a team member death, so handle that possibility here
         |> combine
-            (event chooseStateOnGetNextStep
+            (event chooseStateOnGetAction
             |> map (fun (state: BattleState) -> 
                 state
                 |> BattleState.deadTeamMembers
