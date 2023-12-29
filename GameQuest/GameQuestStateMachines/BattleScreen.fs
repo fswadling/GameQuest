@@ -143,6 +143,7 @@ type CombatantPanelManager (name: string, actor: IActor) =
         battleState.TeamMemberActors
         |> Seq.map (fun kvp -> kvp.Key, CombatantPanelManager(kvp.Key.ToString(), kvp.Value))
         |> dict
+        // Using .Net dictionary here rather than map as this area of the code needs to be performant
         |> System.Collections.Generic.Dictionary
 
     static member GetEnemyPanelManager (battleState: BattleManager) =
@@ -150,6 +151,7 @@ type CombatantPanelManager (name: string, actor: IActor) =
 
 type BattleScreen (desktop: Desktop, updateScreenFn: System.Action<ScreenJourneyEvent>, storyState: Story.State, gameState: GameState) =
     let mutable battleState: BattleManager = null
+    // Using .Net dictionary here rather than map as this area of the code needs to be performant
     let mutable team = System.Collections.Generic.Dictionary<StoryShared.TeamMember, CombatantPanelManager>()
     let mutable enemy: CombatantPanelManager = null
 
